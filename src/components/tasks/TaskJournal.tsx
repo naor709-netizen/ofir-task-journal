@@ -6,7 +6,7 @@ import { useToast } from "@/components/Toast";
 import {
   type JournalData, type Task, type TaskCategory, type TaskNature, type TaskStatus,
   subscribeJournal, getJournalSnapshot, getServerJournalSnapshot, setJournalData,
-  subscribeSyncState, getSyncState, getServerSyncState, initJournalSync,
+  subscribeSyncState, getSyncState, getServerSyncState, getSyncDetail, initJournalSync,
   emptyTask, uid, isDone,
   replaceTaskInTree, removeTaskFromTree, flattenTasks, countSubtasks,
   toDateKey, formatDateHe,
@@ -273,13 +273,26 @@ export default function TaskJournal() {
         </nav>
 
         <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-          <span title={syncState === "local" ? "הנתונים נשמרים בדפדפן זה בלבד — להפעלת סנכרון יש להריץ את schema-journal.sql" : undefined}
+          <button
+            title="לחיצה מציגה אבחון סנכרון"
+            onClick={() => {
+              const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+              const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+              alert(
+                `אבחון סנכרון\n` +
+                `מצב: ${sync.label}\n` +
+                `כתובת Supabase בבנייה: ${url || "❌ חסרה"}\n` +
+                `מפתח anon בבנייה: ${key ? "✓ קיים (" + key.slice(0, 12) + "…)" : "❌ חסר"}\n` +
+                `שגיאה אחרונה: ${getSyncDetail() || "אין"}`
+              );
+            }}
             style={{
               display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5,
               color: sync.color, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 12px",
+              background: "transparent", cursor: "pointer", fontFamily: "inherit",
             }}>
             {sync.icon}{sync.label}
-          </span>
+          </button>
           <button onClick={createTask} className="tj-newbtn" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             background: T.grad, color: "#06121F", border: "none", borderRadius: 11,

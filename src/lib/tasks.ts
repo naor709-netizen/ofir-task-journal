@@ -179,7 +179,12 @@ function notify() {
 export type SyncState = "local" | "syncing" | "synced" | "error";
 
 let syncState: SyncState = "local";
+let syncDetail = "";
 const syncListeners = new Set<() => void>();
+
+export function getSyncDetail(): string {
+  return syncDetail;
+}
 
 export function subscribeSyncState(cb: () => void): () => void {
   syncListeners.add(cb);
@@ -262,7 +267,8 @@ async function flushPush() {
       if (error) throw error;
     }
     setSyncState("synced");
-  } catch {
+  } catch (e) {
+    syncDetail = e instanceof Error ? e.message : JSON.stringify(e);
     setSyncState("error");
   }
 }
@@ -301,8 +307,9 @@ export async function initJournalSync() {
       .on("postgres_changes", { event: "*", schema: "public", table: "journal_tasks" }, scheduleRefetch)
       .on("postgres_changes", { event: "*", schema: "public", table: "journal_meta" }, scheduleRefetch)
       .subscribe();
-  } catch {
+  } catch (e) {
     remote = false;
+    syncDetail = e instanceof Error ? e.message : JSON.stringify(e);
     setSyncState("local");
   }
 }

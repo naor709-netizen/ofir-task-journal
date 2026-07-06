@@ -31,9 +31,10 @@ function taskAtPath(root: Task, path: string[]): Task {
   return cur;
 }
 
-export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCategory, onClose }: {
+export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCategory, onClose, isNew }: {
   root: Task;
   focusId: string;
+  isNew?: boolean;
   categories: TaskCategory[];
   onSave: (updated: Task) => void;
   onDelete: (id: string) => void;
@@ -261,13 +262,14 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
           {/* category */}
           <Field label="קטגוריה" icon={Ic.layers(13)}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              {categories.map((c) => {
+              {[...categories.filter((c) => !c.parentId).flatMap((parent) => [parent, ...categories.filter((k) => k.parentId === parent.id)])].map((c) => {
                 const active = current.categoryId === c.id;
+                const parent = c.parentId ? categories.find((k) => k.id === c.parentId) : null;
                 return (
                   <button key={c.id} onClick={() => patch({ categoryId: active ? null : c.id })}
                     style={chip(c.color, active)}>
                     <span style={{ width: 8, height: 8, borderRadius: 3, background: c.color }} />
-                    {c.name}
+                    {parent ? `${parent.name} ‹ ${c.name}` : c.name}
                   </button>
                 );
               })}
@@ -505,10 +507,10 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
               borderRadius: 10, padding: "8px 16px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
             }}>ביטול</button>
             <button onClick={save} style={{
-              background: T.grad, border: "none", color: "#06121F",
+              background: T.grad, border: "none", color: "#fff",
               borderRadius: 10, padding: "8px 26px", fontSize: 13, fontWeight: 700, cursor: "pointer",
               fontFamily: "var(--font-display)",
-            }}>שמירה</button>
+            }}>{isNew ? "הוספה ליומן" : "שמירה"}</button>
           </div>
         </div>
       </div>

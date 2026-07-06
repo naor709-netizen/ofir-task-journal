@@ -48,11 +48,13 @@ export default function TaskJournal() {
   const [calMonth, setCalMonth] = useState(today.getMonth());
 
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [freshId, setFreshId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // add category (sidebar)
   const [newCatName, setNewCatName] = useState("");
   const [newCatColor, setNewCatColor] = useState(CATEGORY_COLOR_CHOICES[0]);
+  const [newCatParent, setNewCatParent] = useState<string | null>(null);
 
   useEffect(() => { initJournalSync(); }, []);
 
@@ -105,10 +107,23 @@ export default function TaskJournal() {
     [categories]
   );
 
+  const expandedCatFilter = useMemo(() => {
+    if (catFilter.size === 0) return catFilter;
+    const s = new Set(catFilter);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const c of categories) {
+        if (c.parentId && s.has(c.parentId) && !s.has(c.id)) { s.add(c.id); grew = true; }
+      }
+    }
+    return s;
+  }, [catFilter, categories]);
+
   const filteredTasks = useMemo(() => {
     const q = search.trim();
     return (journal?.tasks ?? []).filter((t) => {
-      if (catFilter.size > 0 && !(t.categoryId && catFilter.has(t.categoryId))) return false;
+      if (expandedCatFilter.size > 0 && !(t.categoryId && expandedCatFilter.has(t.categoryId))) return false;
       if (natureFilter.size > 0 && !(t.nature && natureFilter.has(t.nature))) return false;
       if (statusFilter === "active" && isDone(t)) return false;
       if (statusFilter === "done" && !isDone(t)) return false;
@@ -122,7 +137,7 @@ export default function TaskJournal() {
       if (selectedDate && t.dueDate !== selectedDate && t.endDate !== selectedDate) return false;
       return true;
     });
-  }, [journal, catFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate]);
+  }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate]);
 
   const criticalTasks = filteredTasks.filter((t) => t.critical && !isDone(t));
   const regularTasks = filteredTasks.filter((t) => !(t.critical && !isDone(t)));
@@ -154,9 +169,9 @@ export default function TaskJournal() {
   }, [filteredTasks]);
 
   // ---- actions ----
-  function addCategory(name: string, color: string): TaskCategory | null {
+  function addCategory(name: string, color: string, parentId: string | null = null): TaskCategory | null {
     if (!journal || !name.trim()) return null;
-    const cat: TaskCategory = { id: uid(), name: name.trim(), color };
+    const cat: TaskCategory = { id: uid(), name: name.trim(), color, parentId };
     persist({ ...journal, categories: [...journal.categories, cat] });
     return cat;
   }
@@ -171,7 +186,9 @@ export default function TaskJournal() {
       }));
     persist({
       ...journal,
-      categories: journal.categories.filter((c) => c.id !== id),
+      categories: journal.categories
+        .filter((c) => c.id !== id)
+        .map((c) => (c.parentId === id ? { ...c, parentId: null } : c)),
       tasks: clearCat(journal.tasks),
     });
     setCatFilter((prev) => { const n = new Set(prev); n.delete(id); return n; });
@@ -179,8 +196,9 @@ export default function TaskJournal() {
 
   function createTask() {
     if (!journal) return;
-    const t = { ...emptyTask(), title: "משימה חדשה", dueDate: todayKey };
+    const t = { ...emptyTask(), title: "", dueDate: todayKey };
     persist({ ...journal, tasks: [t, ...journal.tasks] });
+    setFreshId(t.id);
     setOpenTaskId(t.id);
   }
 
@@ -295,7 +313,7 @@ export default function TaskJournal() {
           </button>
           <button onClick={createTask} className="tj-newbtn" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
-            background: T.grad, color: "#06121F", border: "none", borderRadius: 11,
+            background: T.grad, color: "#fff", border: "none", borderRadius: 11,
             padding: "10px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
             fontFamily: "var(--font-display)",
           }}>
@@ -344,11 +362,11 @@ export default function TaskJournal() {
 
           <SectionTitle>קטגוריות</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
-            {categories.map((c) => {
+            {[...categories.filter((c) => !c.parentId).flatMap((parent) => [parent, ...categories.filter((k) => k.parentId === parent.id)])].map((c) => {
               const active = catFilter.has(c.id);
               const count = filteredCountByCat(journal.tasks, c.id);
               return (
-                <div key={c.id} className="tj-catrow" style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <div key={c.id} className="tj-catrow" style={{ display: "flex", alignItems: "center", gap: 2, paddingInlineStart: c.parentId ? 18 : 0 }}>
                   <button
                     onClick={() => toggleSet(catFilter, c.id, setCatFilter)}
                     style={{
@@ -359,10 +377,17 @@ export default function TaskJournal() {
                       fontSize: 12.5, fontWeight: active ? 600 : 400,
                       color: active ? T.ink : T.ink2, fontFamily: "inherit",
                     }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 3, background: c.color, flexShrink: 0 }} />
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                    <span style={{ width: c.parentId ? 7 : 9, height: c.parentId ? 7 : 9, borderRadius: 3, background: c.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: c.parentId ? 12 : undefined }}>{c.name}</span>
                     <span className="num" style={{ fontSize: 10.5, color: T.ink3 }}>{count}</span>
                   </button>
+                  {!c.parentId && (
+                    <button title="הוספת תת-קטגוריה" onClick={() => { setNewCatParent(c.id); setNewCatName(""); }}
+                      className="tj-catdel"
+                      style={{ background: "transparent", border: "none", color: T.accent, cursor: "pointer", padding: 4, borderRadius: 6 }}>
+                      {Ic.plus(11)}
+                    </button>
+                  )}
                   <button title="מחיקת קטגוריה" onClick={() => deleteCategory(c.id)}
                     className="tj-catdel"
                     style={{ background: "transparent", border: "none", color: T.ink3, cursor: "pointer", padding: 4, borderRadius: 6 }}>
@@ -376,12 +401,20 @@ export default function TaskJournal() {
           {/* add category */}
           <div style={{ background: T.bg2, border: `1px solid ${T.line}`, borderRadius: 11, padding: 10, marginBottom: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: T.ink2, marginBottom: 7, display: "flex", alignItems: "center", gap: 5 }}>
-              {Ic.plus(12)} קטגוריה חדשה
+              {Ic.plus(12)}
+              {newCatParent && catById[newCatParent]
+                ? <>תת-קטגוריה בתוך <b style={{ color: catById[newCatParent].color }}>{catById[newCatParent].name}</b>
+                    <button onClick={() => setNewCatParent(null)} title="ביטול"
+                      style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", display: "inline-flex", padding: 2 }}>
+                      {Ic.x(10)}
+                    </button>
+                  </>
+                : "קטגוריה חדשה"}
             </div>
             <input
               placeholder="שם הקטגוריה" value={newCatName}
               onChange={(e) => setNewCatName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && newCatName.trim()) { addCategory(newCatName, newCatColor); setNewCatName(""); } }}
+              onKeyDown={(e) => { if (e.key === "Enter" && newCatName.trim()) { addCategory(newCatName, newCatColor, newCatParent); setNewCatName(""); setNewCatParent(null); } }}
               style={{ ...inputStyle, width: "100%", padding: "7px 10px", fontSize: 12, marginBottom: 8 }}
             />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
@@ -397,7 +430,7 @@ export default function TaskJournal() {
                 style={{ width: 18, height: 18, padding: 0, border: "none", borderRadius: 6, cursor: "pointer", background: "transparent" }} />
             </div>
             <button
-              onClick={() => { if (newCatName.trim()) { addCategory(newCatName, newCatColor); setNewCatName(""); } }}
+              onClick={() => { if (newCatName.trim()) { addCategory(newCatName, newCatColor, newCatParent); setNewCatName(""); setNewCatParent(null); } }}
               disabled={!newCatName.trim()}
               style={{
                 width: "100%", border: "none", borderRadius: 9, padding: "8px 0",
@@ -598,12 +631,21 @@ export default function TaskJournal() {
       {openRoot && (
         <TaskModal
           root={openRoot}
+          isNew={openRoot.id === freshId}
           focusId={openTaskId!}
           categories={categories}
           onSave={saveTask}
           onDelete={deleteTask}
           onAddCategory={addCategory}
-          onClose={() => setOpenTaskId(null)}
+          onClose={() => {
+            const snap = getJournalSnapshot();
+            if (freshId && snap) {
+              const ft = snap.tasks.find((x) => x.id === freshId);
+              if (ft && !ft.title.trim()) setJournalData({ ...snap, tasks: removeTaskFromTree(snap.tasks, freshId) });
+            }
+            setOpenTaskId(null);
+            setFreshId(null);
+          }}
         />
       )}
 
@@ -717,7 +759,7 @@ function Empty({ filtersActive, onCreate }: { filtersActive: boolean; onCreate: 
       {!filtersActive && (
         <button onClick={onCreate} style={{
           marginTop: 14, display: "inline-flex", alignItems: "center", gap: 7,
-          background: T.grad, color: "#06121F", border: "none",
+          background: T.grad, color: "#fff", border: "none",
           borderRadius: 10, padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
           fontFamily: "var(--font-display)",
         }}>{Ic.plus(14)} משימה ראשונה</button>
@@ -901,10 +943,10 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
   );
 }
 
-// טקסט על צ'יפ צבעוני בלוח — גרסה בהירה של צבע הקטגוריה שקריאה על כהה
+// טקסט על צ'יפ צבעוני בלוח — גרסה כהה של צבע הקטגוריה שקריאה על בהיר
 function mixToInk(hex: string): string {
   const n = parseInt(hex.slice(1), 16);
   const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  const lift = (v: number) => Math.round(v + (255 - v) * 0.55);
-  return `rgb(${lift(r)},${lift(g)},${lift(b)})`;
+  const deepen = (v: number) => Math.round(v * 0.62);
+  return `rgb(${deepen(r)},${deepen(g)},${deepen(b)})`;
 }

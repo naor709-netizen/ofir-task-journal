@@ -4,7 +4,7 @@
   --font: 'Heebo', system-ui, sans-serif;
   --font-display: 'Rubik', 'Heebo', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -13,8 +13,8 @@ html { direction: rtl; }
 
 body {
   margin: 0;
-  background: #0A1120;
-  color: #E8EEF9;
+  background: #F2F5F9;
+  color: #15253F;
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -32,14 +32,14 @@ input, textarea, select { font-family: inherit; }
 
 .softblob { position: absolute; border-radius: 50%; filter: blur(48px); opacity: 0.35; pointer-events: none; }
 
-::selection { background: rgba(61,126,255,0.4); }
+::selection { background: rgba(37,99,235,0.22); }
 
 /* native date/time popups + scrollbars in dark */
-::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+::-webkit-calendar-picker-indicator { opacity: 0.7; }
 
 @media (max-width: 768px) {
   .modal-mobile-full {
     max-width: 100% !important; margin: 0 !important;
-    border-radius: 0 !important; min-height: 100vh; max-height: 100vh !important;
+    border-radius: 0 !important; min-height: 100dvh; max-height: 100dvh !important;
   }
 }

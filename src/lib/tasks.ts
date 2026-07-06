@@ -15,9 +15,9 @@ export const NATURE_LABELS: Record<TaskNature, string> = {
 };
 
 export const NATURE_COLORS: Record<TaskNature, string> = {
-  personal: "#A78BFA",
-  urgent: "#F87171",
-  routine: "#38BDF8",
+  personal: "#7C3AED",
+  urgent: "#DC2626",
+  routine: "#0284C7",
 };
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -27,15 +27,16 @@ export const STATUS_LABELS: Record<TaskStatus, string> = {
 };
 
 export const STATUS_COLORS: Record<TaskStatus, string> = {
-  todo: "#94A3B8",
-  in_progress: "#FBBF24",
-  done: "#2DD4A8",
+  todo: "#64748B",
+  in_progress: "#B45309",
+  done: "#0F8A6C",
 };
 
 export interface TaskCategory {
   id: string;
   name: string;
   color: string;
+  parentId?: string | null; // תת-קטגוריה
 }
 
 export interface TaskFile {
@@ -130,7 +131,7 @@ export function loadJournal(): JournalData {
     if (!raw) return { categories: DEFAULT_CATEGORIES, tasks: [] };
     const parsed = JSON.parse(raw) as JournalData;
     return {
-      categories: parsed.categories ?? DEFAULT_CATEGORIES,
+      categories: (parsed.categories ?? DEFAULT_CATEGORIES).map((c) => ({ parentId: null, ...c })),
       tasks: (parsed.tasks ?? []).map(normalizeTask),
     };
   } catch {

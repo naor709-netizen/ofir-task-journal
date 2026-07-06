@@ -11,7 +11,7 @@ import { T, card, Ic, StatusIcon } from "./ui";
 
 // chart fills snapped to the dark-band (validated); UI text keeps STATUS_COLORS
 const STATUS_FILL: Record<TaskStatus, string> = {
-  todo: "#64748B",
+  todo: "#8A97A8",
   in_progress: "#C07F0E",
   done: "#0FA47E",
 };
@@ -480,7 +480,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
                     width: "70%", maxWidth: 22,
                     height: `${(count / maxMonth) * 88}%`,
                     minHeight: count > 0 ? 4 : 1,
-                    background: count > 0 ? (hoverMonth === i ? "#5B93FF" : T.accent) : T.surface2,
+                    background: count > 0 ? (hoverMonth === i ? "#1D4ED8" : T.accent) : T.surface2,
                     borderRadius: "4px 4px 0 0",
                   }} />
                 </div>

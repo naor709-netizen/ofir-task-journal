@@ -1,27 +1,27 @@
 "use client";
 
 // ============================================
-// יומן המשימות — dark premium theme + icon set
+// יומן המשימות — light premium theme + icon set
 // ============================================
 
 export const T = {
-  bg: "#0A1120",
-  bg2: "#0D1626",
-  surface: "#111C30",
-  surface2: "#182542",
-  line: "rgba(148,163,184,0.14)",
-  lineStrong: "rgba(148,163,184,0.26)",
-  ink: "#E8EEF9",
-  ink2: "#9FB0C9",
-  ink3: "#5E7089",
-  accent: "#3D7EFF",
-  accentSoft: "rgba(61,126,255,0.14)",
-  mint: "#2DD4A8",
-  mintSoft: "rgba(45,212,168,0.13)",
-  grad: "linear-gradient(120deg,#3D7EFF 0%,#2DD4A8 100%)",
-  danger: "#F87171",
-  dangerSoft: "rgba(248,113,113,0.13)",
-  amber: "#FBBF24",
+  bg: "#F2F5F9",
+  bg2: "#F7FAFD",
+  surface: "#FFFFFF",
+  surface2: "#EAF0F7",
+  line: "rgba(23,43,77,0.12)",
+  lineStrong: "rgba(23,43,77,0.24)",
+  ink: "#15253F",
+  ink2: "#4A5E78",
+  ink3: "#7C8DA4",
+  accent: "#2563EB",
+  accentSoft: "rgba(37,99,235,0.10)",
+  mint: "#0FA47E",
+  mintSoft: "rgba(15,164,126,0.12)",
+  grad: "linear-gradient(120deg,#2563EB 0%,#0FA47E 100%)",
+  danger: "#DC2626",
+  dangerSoft: "rgba(220,38,38,0.10)",
+  amber: "#B45309",
   r: 14,
 };
 
@@ -29,6 +29,7 @@ export const card: React.CSSProperties = {
   background: T.surface,
   border: `1px solid ${T.line}`,
   borderRadius: 16,
+  boxShadow: "0 1px 3px rgba(23,43,77,0.06)",
 };
 
 export function chip(color: string, active: boolean): React.CSSProperties {
@@ -44,15 +45,15 @@ export function chip(color: string, active: boolean): React.CSSProperties {
 }
 
 export const inputStyle: React.CSSProperties = {
-  background: T.bg2,
-  border: `1px solid ${T.line}`,
+  background: "#FFFFFF",
+  border: `1px solid ${T.lineStrong}`,
   borderRadius: 10,
   color: T.ink,
   padding: "9px 12px",
   fontSize: 13,
   fontFamily: "inherit",
   outline: "none",
-  colorScheme: "dark",
+  colorScheme: "light",
 };
 
 // ---------- icons (stroke, currentColor) ----------

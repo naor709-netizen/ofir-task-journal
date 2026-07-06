@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 220" role="img" aria-label="ההסתדרות">
+  <!-- Star of David (two triangles, two blues) -->
+  <polygon points="130,16 42,166 218,166" fill="#35BDF2" stroke="#35BDF2" stroke-width="14" stroke-linejoin="round"/>
+  <polygon points="130,204 42,54 218,54" fill="#1187C9" stroke="#1187C9" stroke-width="14" stroke-linejoin="round" opacity="0.95"/>
+  <!-- Handshake -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M252 104 H184 L138 150" stroke="#0F4C97" stroke-width="32"/>
+    <path d="M8 136 H76 L122 90" stroke="#4FC1F0" stroke-width="32"/>
+    <path d="M116 126 l22 -20" stroke="#0F4C97" stroke-width="13"/>
+    <path d="M132 140 l22 -20" stroke="#4FC1F0" stroke-width="13"/>
+    <path d="M148 154 l18 -16" stroke="#0F4C97" stroke-width="13"/>
+  </g>
+</svg>

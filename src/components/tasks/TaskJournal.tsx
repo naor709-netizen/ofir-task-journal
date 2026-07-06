@@ -179,7 +179,7 @@ export default function TaskJournal() {
 
   function createTask() {
     if (!journal) return;
-    const t = { ...emptyTask(), title: "משימה חדשה" };
+    const t = { ...emptyTask(), title: "משימה חדשה", dueDate: todayKey };
     persist({ ...journal, tasks: [t, ...journal.tasks] });
     setOpenTaskId(t.id);
   }

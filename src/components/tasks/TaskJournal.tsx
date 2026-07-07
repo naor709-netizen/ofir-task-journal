@@ -545,7 +545,32 @@ export default function TaskJournal() {
                 </section>
               )}
 
-              {/* calendar */}
+              {/* tasks (main, right) + calendar (left column) side by side */}
+              <div className="tj-dash-cols" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+              <section className="tj-card" style={{ ...card, padding: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ color: T.accent }}>{Ic.layers(16)}</span>
+                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>המשימות שלי</h2>
+                  <span className="num" style={{ fontSize: 11.5, color: T.ink2, background: T.surface2, borderRadius: 99, padding: "2px 9px" }}>
+                    {filteredTasks.length}
+                  </span>
+                </div>
+
+                {filteredTasks.length === 0 ? (
+                  <Empty filtersActive={filtersActive} onCreate={createTask} />
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                    {regularTasks.map((t) => (
+                      <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
+                        todayKey={todayKey}
+                        onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
+                    ))}
+                  </div>
+                )}
+              </section>
+                </div>
+                <div className="tj-dash-cal" style={{ width: 452, flexShrink: 0, position: "sticky", top: 14 }}>
               <section className="tj-card" style={{ ...card, padding: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
                   <span style={{ color: T.accent }}>{Ic.calendar(16)}</span>
@@ -582,29 +607,9 @@ export default function TaskJournal() {
                   </div>
                 )}
               </section>
-
-              {/* task list */}
-              <section className="tj-card" style={{ ...card, padding: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <span style={{ color: T.accent }}>{Ic.layers(16)}</span>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>המשימות שלי</h2>
-                  <span className="num" style={{ fontSize: 11.5, color: T.ink2, background: T.surface2, borderRadius: 99, padding: "2px 9px" }}>
-                    {filteredTasks.length}
-                  </span>
                 </div>
+              </div>
 
-                {filteredTasks.length === 0 ? (
-                  <Empty filtersActive={filtersActive} onCreate={createTask} />
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                    {regularTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
-                        todayKey={todayKey}
-                        onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
-                    ))}
-                  </div>
-                )}
-              </section>
             </>
           )}
 
@@ -654,6 +659,10 @@ export default function TaskJournal() {
         .tj-catdel { opacity: 0; transition: opacity .15s; }
         .tj-catrow:hover .tj-catdel { opacity: 0.7; }
         input::placeholder, textarea::placeholder { color: #5E7089; }
+        @media (max-width: 1180px) {
+          .tj-dash-cols { flex-direction: column !important; }
+          .tj-dash-cal { width: 100% !important; position: static !important; }
+        }
         @media (max-width: 900px) {
           .tj-sidebar { display: none; }
           .tj-sidebar-toggle { display: flex !important; }

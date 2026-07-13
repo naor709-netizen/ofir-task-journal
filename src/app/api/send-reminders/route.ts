@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   );
 
   const supabase = createClient(url, key);
-  const nowIso = new Date().toISOString();
+  const now = Date.now();
 
   // 1. gather due reminders across all tasks + subtasks
   const { data: rows, error: tErr } = await supabase.from("journal_tasks").select("payload");
@@ -49,7 +49,8 @@ export async function POST(req: Request) {
   for (const row of (rows ?? []) as { payload: Task }[]) {
     for (const t of flatten([row.payload])) {
       for (const r of t.reminders ?? []) {
-        if (!r.fired && r.datetime && r.datetime <= nowIso) {
+        const ts = r.datetime ? new Date(r.datetime).getTime() : NaN;
+        if (!r.fired && !isNaN(ts) && ts <= now) {
           due.push({ reminderId: r.id, title: r.note || t.title || "תזכורת", body: t.title || "" });
         }
       }

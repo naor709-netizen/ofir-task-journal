@@ -5,7 +5,7 @@ import { useToast } from "@/components/Toast";
 import {
   type Task, type TaskCategory, type TaskFile, type TaskNature, type TaskStatus,
   emptyTask, uid, isDone, updateTaskInTree, removeTaskFromTree, countSubtasks,
-  formatDateHe, formatDateTimeHe,
+  formatDateHe, formatDateTimeHe, isoToLocalInput, localInputToIso,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
 import { T, chip, inputStyle, Ic, StatusIcon } from "./ui";
@@ -339,9 +339,9 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
                   borderRadius: 10, padding: "7px 9px",
                 }}>
                   <input
-                    type="datetime-local" value={r.datetime.slice(0, 16)}
+                    type="datetime-local" value={isoToLocalInput(r.datetime)}
                     onChange={(e) => patch({
-                      reminders: current.reminders.map((x) => x.id === r.id ? { ...x, datetime: e.target.value, fired: false } : x),
+                      reminders: current.reminders.map((x) => x.id === r.id ? { ...x, datetime: localInputToIso(e.target.value), fired: false } : x),
                     })}
                     style={{ ...inputStyle, padding: "5px 8px", fontSize: 12 }}
                   />
@@ -361,8 +361,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
               <button onClick={() => {
                 const dt = new Date(Date.now() + 60 * 60 * 1000);
                 dt.setSeconds(0, 0);
-                const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-                patch({ reminders: [...current.reminders, { id: uid(), datetime: local, note: "", fired: false }] });
+                patch({ reminders: [...current.reminders, { id: uid(), datetime: dt.toISOString(), note: "", fired: false }] });
               }} style={addBtnStyle}>
                 {Ic.plus(12)} הוספת תזכורת
               </button>

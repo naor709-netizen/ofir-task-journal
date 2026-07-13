@@ -115,11 +115,37 @@ export function emptyTask(): Task {
 
 type LegacyTask = Partial<Task> & { done?: boolean };
 
+// תזכורות ישנות נשמרו כשעון מקומי ("YYYY-MM-DDTHH:mm") — ממירים ל-UTC ISO
+// כדי שההשוואה בשרת (וגם באפליקציה) תהיה נכונה בכל אזור זמן.
+function normalizeReminderDatetime(dt: string): string {
+  if (dt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dt)) {
+    const d = new Date(dt); // נקרא כשעון מקומי
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+  return dt;
+}
+
 function normalizeTask(t: LegacyTask): Task {
   const status: TaskStatus = t.status ?? (t.done ? "done" : "todo");
   const base = { ...emptyTask(), ...t, status };
   delete (base as LegacyTask).done;
-  return { ...base, subtasks: (t.subtasks ?? []).map(normalizeTask) };
+  return {
+    ...base,
+    reminders: (t.reminders ?? []).map((r) => ({ ...r, datetime: normalizeReminderDatetime(r.datetime) })),
+    subtasks: (t.subtasks ?? []).map(normalizeTask),
+  };
+}
+
+// המרות בין ISO (אחסון) לבין ערך שדה datetime-local (תצוגה מקומית)
+export function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+export function localInputToIso(local: string): string {
+  if (!local) return local;
+  const d = new Date(local);
+  return isNaN(d.getTime()) ? local : d.toISOString();
 }
 
 export function loadJournal(): JournalData {

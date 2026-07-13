@@ -49,6 +49,18 @@ npm run dev
 
 בלי משתני הסביבה האפליקציה עדיין עובדת, אך שומרת מקומית בלבד (חיווי "מקומי בלבד").
 
+## התראות Web Push (תזכורות כשהיומן סגור)
+
+תזכורות מגיעות כהתראת מערכת גם כשהיומן סגור, דרך Web Push:
+
+1. **מפתחות VAPID** — צור עם `npx web-push generate-vapid-keys` והוסף ל-Vercel:
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (mailto), ו-`CRON_SECRET` (מחרוזת אקראית).
+2. **Supabase** — הפעל את התוספים `pg_cron` ו-`pg_net` (Database → Extensions), ואז הרץ את
+   [`supabase-reminders.sql`](./supabase-reminders.sql) (יוצר טבלאות + משימת cron שכל דקה קוראת ל-`/api/send-reminders`).
+3. **במכשיר** — לחץ "הפעל התראות" ביומן ואשר. באייפון: קודם "הוסף למסך הבית" (Web Push נתמך רק ב-PWA מותקן, iOS 16.4+).
+
+הזרימה: `pg_cron` (כל דקה) → `/api/send-reminders` → מאתר תזכורות שהגיע זמנן → שולח Web Push לכל המכשירים הרשומים.
+
 ## מבנה
 
 ```

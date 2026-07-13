@@ -13,6 +13,7 @@ import {
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS,
   HE_MONTHS, HE_WEEKDAYS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
+import { pushPermission, isSubscribed, enablePush } from "@/lib/push";
 import { T, card, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
@@ -57,6 +58,28 @@ export default function TaskJournal() {
   const [newCatParent, setNewCatParent] = useState<string | null>(null);
 
   useEffect(() => { initJournalSync(); }, []);
+
+  // ---- push notifications ----
+  const [pushState, setPushState] = useState<"unsupported" | "off" | "on" | "denied">("off");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const perm = pushPermission();
+      if (perm === "unsupported") { if (!cancelled) setPushState("unsupported"); return; }
+      if (perm === "denied") { if (!cancelled) setPushState("denied"); return; }
+      const sub = await isSubscribed();
+      if (!cancelled) setPushState(sub && perm === "granted" ? "on" : "off");
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  async function togglePush() {
+    if (pushState === "on") { toast("ההתראות כבר פעילות", "info"); return; }
+    const r = await enablePush();
+    if (r.ok) { setPushState("on"); toast("התראות הופעלו — תזכורות יגיעו גם כשהיומן סגור", "success"); }
+    else if (r.reason === "denied") { setPushState("denied"); toast("ההרשאה נדחתה — יש לאשר התראות בהגדרות הדפדפן", "error"); }
+    else if (r.reason === "unsupported") { setPushState("unsupported"); toast("הדפדפן לא תומך בהתראות (באייפון: הוסף למסך הבית קודם)", "error"); }
+    else { toast("הפעלת ההתראות נכשלה: " + (r.reason ?? ""), "error"); }
+  }
 
   function persist(next: JournalData) {
     if (!setJournalData(next)) toast("השמירה נכשלה — ייתכן שהקבצים המצורפים גדולים מדי", "error");
@@ -311,6 +334,17 @@ export default function TaskJournal() {
             }}>
             {sync.icon}{sync.label}
           </button>
+          {pushState !== "unsupported" && (
+            <button onClick={togglePush} title={pushState === "on" ? "התראות פעילות" : "הפעלת התראות"} style={{
+              display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontFamily: "inherit",
+              border: `1px solid ${pushState === "on" ? `${T.mint}66` : T.line}`, borderRadius: 99, padding: "5px 12px",
+              background: pushState === "on" ? T.mintSoft : "transparent",
+              color: pushState === "on" ? T.mint : pushState === "denied" ? T.danger : T.ink2,
+              cursor: "pointer",
+            }}>
+              {Ic.bell(13)} {pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : "הפעל התראות"}
+            </button>
+          )}
           <button onClick={createTask} className="tj-newbtn" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             background: T.grad, color: "#fff", border: "none", borderRadius: 11,

@@ -74,6 +74,56 @@ export async function enablePush(): Promise<PushResult> {
   return { ok: true };
 }
 
+export interface PushDiag {
+  permission: NotificationPermission | "unsupported";
+  standalone: boolean; // מותקן כ-PWA (רלוונטי לאייפון)
+  ios: boolean;
+  vapidBaked: boolean;
+  deviceSubscribed: boolean;
+  server: { vapidPublic: boolean; vapidPrivate: boolean; cronSecret: boolean; supabase: boolean } | null;
+  cloudSubscriptions: number | null; // null — הטבלה לא קיימת / שגיאה
+  cloudError: string | null;
+  heartbeatAt: string | null; // הרצת ה-cron האחרונה בשרת
+}
+
+export async function diagnosePush(): Promise<PushDiag> {
+  const diag: PushDiag = {
+    permission: pushPermission(),
+    standalone: typeof window !== "undefined" &&
+      (window.matchMedia?.("(display-mode: standalone)").matches ||
+        (navigator as unknown as { standalone?: boolean }).standalone === true),
+    ios: typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent),
+    vapidBaked: !!VAPID_PUBLIC,
+    deviceSubscribed: await isSubscribed(),
+    server: null,
+    cloudSubscriptions: null,
+    cloudError: null,
+    heartbeatAt: null,
+  };
+
+  try {
+    const res = await fetch("/api/send-reminders", { method: "GET" });
+    if (res.ok) diag.server = await res.json();
+  } catch {
+    /* offline / route missing */
+  }
+
+  try {
+    const { supabase } = await import("./supabase");
+    const [subsRes, hbRes] = await Promise.all([
+      supabase.from("push_subscriptions").select("endpoint", { count: "exact", head: true }),
+      supabase.from("reminders_sent").select("sent_at").eq("reminder_id", "__cron_heartbeat__").maybeSingle(),
+    ]);
+    if (subsRes.error) diag.cloudError = subsRes.error.message;
+    else diag.cloudSubscriptions = subsRes.count ?? 0;
+    if (!hbRes.error && hbRes.data) diag.heartbeatAt = hbRes.data.sent_at;
+  } catch (e) {
+    diag.cloudError = e instanceof Error ? e.message : "cloud-unreachable";
+  }
+
+  return diag;
+}
+
 export async function disablePush(): Promise<void> {
   if (!pushSupported()) return;
   try {

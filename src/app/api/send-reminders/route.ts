@@ -18,6 +18,16 @@ function flatten(tasks: Task[]): Task[] {
   return out;
 }
 
+// אבחון תצורה — בוליאנים בלבד, בלי ערכים רגישים
+export async function GET() {
+  return NextResponse.json({
+    vapidPublic: !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    vapidPrivate: !!process.env.VAPID_PRIVATE_KEY,
+    cronSecret: !!process.env.CRON_SECRET,
+    supabase: !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  });
+}
+
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers.get("x-cron-secret") !== secret) {
@@ -40,6 +50,11 @@ export async function POST(req: Request) {
 
   const supabase = createClient(url, key);
   const now = Date.now();
+
+  // דופק — מאפשר לאבחון בצד הלקוח לדעת שה-cron אכן מגיע לשרת
+  await supabase
+    .from("reminders_sent")
+    .upsert({ reminder_id: "__cron_heartbeat__", sent_at: new Date(now).toISOString() }, { onConflict: "reminder_id" });
 
   // 1. gather due reminders across all tasks + subtasks
   const { data: rows, error: tErr } = await supabase.from("journal_tasks").select("payload");

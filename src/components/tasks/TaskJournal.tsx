@@ -13,7 +13,7 @@ import {
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS,
   HE_MONTHS, HE_WEEKDAYS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
-import { pushPermission, isSubscribed, enablePush } from "@/lib/push";
+import { pushPermission, isSubscribed, enablePush, diagnosePush } from "@/lib/push";
 import { T, card, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
@@ -72,12 +72,60 @@ export default function TaskJournal() {
     })();
     return () => { cancelled = true; };
   }, []);
+  async function showPushDiag() {
+    toast("בודק את מערך ההתראות…", "info");
+    const d = await diagnosePush();
+    const yes = "✓", no = "✗";
+    const lines: string[] = ["אבחון התראות", ""];
+    lines.push(
+      `הרשאת דפדפן: ${d.permission === "granted" ? `${yes} אושרה` : d.permission === "denied" ? `${no} נדחתה` : d.permission === "unsupported" ? `${no} לא נתמך` : "○ טרם נתבקשה"}`
+    );
+    lines.push(`המכשיר הזה רשום להתראות: ${d.deviceSubscribed ? yes : no}`);
+    lines.push(`מפתח VAPID בבנייה: ${d.vapidBaked ? yes : `${no} חסר NEXT_PUBLIC_VAPID_PUBLIC_KEY`}`);
+    lines.push(
+      d.server
+        ? `הגדרות שרת: מפתח פרטי ${d.server.vapidPrivate ? yes : no} · CRON_SECRET ${d.server.cronSecret ? yes : no} · Supabase ${d.server.supabase ? yes : no}`
+        : `הגדרות שרת: ${no} הנתיב /api/send-reminders לא זמין`
+    );
+    lines.push(
+      d.cloudSubscriptions === null
+        ? `טבלאות ההתראות ב-Supabase: ${no} ${d.cloudError ?? "לא קיימות"}`
+        : `מכשירים רשומים בענן: ${d.cloudSubscriptions}`
+    );
+    const hbAgeMin = d.heartbeatAt ? Math.round((Date.now() - new Date(d.heartbeatAt).getTime()) / 60000) : null;
+    lines.push(
+      hbAgeMin === null
+        ? `שרת התזכורות (cron): ${no} מעולם לא רץ`
+        : `שרת התזכורות (cron): רץ לאחרונה לפני ${hbAgeMin} דק׳ ${hbAgeMin <= 3 ? yes : no}`
+    );
+    lines.push("");
+    if (!d.vapidBaked || (d.server && (!d.server.vapidPrivate || !d.server.cronSecret))) {
+      lines.push("← הבעיה: חסרים משתני VAPID/CRON_SECRET ב-Vercel. יש להוסיף אותם ולפרוס מחדש (README, שלב 1).");
+    } else if (d.cloudSubscriptions === null) {
+      lines.push("← הבעיה: יש להריץ את supabase-reminders.sql ב-SQL Editor של Supabase (README, שלב 2).");
+    } else if (hbAgeMin === null) {
+      lines.push("← הבעיה: משימת ה-cron לא רצה מעולם. יש להפעיל את התוספים pg_cron ו-pg_net ב-Supabase ולהריץ את supabase-reminders.sql (README, שלב 2).");
+    } else if (hbAgeMin > 3) {
+      lines.push(`← הבעיה: ה-cron הפסיק לרוץ (לפני ${hbAgeMin} דק׳). יש לבדוק את המשימה ofir-reminders ב-Supabase ואת כתובת הפריסה בקובץ ה-SQL.`);
+    } else if (d.permission !== "granted" || !d.deviceSubscribed) {
+      lines.push(d.ios && !d.standalone
+        ? "← הבעיה: באייפון התראות עובדות רק כשהיומן מותקן — שיתוף ← הוסף למסך הבית, ואז \"הפעל התראות\" מתוך האפליקציה."
+        : "← הבעיה: המכשיר הזה לא רשום — יש ללחוץ \"הפעל התראות\" ולאשר.");
+    } else if (d.cloudSubscriptions === 0) {
+      lines.push("← הבעיה: אף מכשיר לא רשום בענן — יש ללחוץ \"הפעל התראות\" מחדש.");
+    } else {
+      lines.push("← הכול תקין: תזכורות יגיעו גם כשהיומן סגור.");
+    }
+    alert(lines.join("\n"));
+  }
+
   async function togglePush() {
-    if (pushState === "on") { toast("ההתראות כבר פעילות", "info"); return; }
+    if (pushState !== "off") { await showPushDiag(); return; }
     const r = await enablePush();
     if (r.ok) { setPushState("on"); toast("התראות הופעלו — תזכורות יגיעו גם כשהיומן סגור", "success"); }
     else if (r.reason === "denied") { setPushState("denied"); toast("ההרשאה נדחתה — יש לאשר התראות בהגדרות הדפדפן", "error"); }
-    else if (r.reason === "unsupported") { setPushState("unsupported"); toast("הדפדפן לא תומך בהתראות (באייפון: הוסף למסך הבית קודם)", "error"); }
+    else if (r.reason === "unsupported") { setPushState("unsupported"); await showPushDiag(); }
+    else if (r.reason === "no-vapid") { await showPushDiag(); }
     else { toast("הפעלת ההתראות נכשלה: " + (r.reason ?? ""), "error"); }
   }
 
@@ -145,19 +193,20 @@ export default function TaskJournal() {
 
   const filteredTasks = useMemo(() => {
     const q = search.trim();
-    return (journal?.tasks ?? []).filter((t) => {
+    // שלבים הם משימות לכל דבר — שורש עובר סינון אם הוא או אחד השלבים שלו עונה על כל התנאים
+    const matches = (t: Task): boolean => {
       if (expandedCatFilter.size > 0 && !(t.categoryId && expandedCatFilter.has(t.categoryId))) return false;
       if (natureFilter.size > 0 && !(t.nature && natureFilter.has(t.nature))) return false;
       if (statusFilter === "active" && isDone(t)) return false;
       if (statusFilter === "done" && !isDone(t)) return false;
       if (criticalOnly && !t.critical) return false;
-      if (q) {
-        const inTree = [t, ...flattenTasks(t.subtasks)].some(
-          (x) => x.title.includes(q) || x.description.includes(q) || x.notes.includes(q)
-        );
-        if (!inTree) return false;
-      }
       if (selectedDate && t.dueDate !== selectedDate && t.endDate !== selectedDate) return false;
+      return true;
+    };
+    return (journal?.tasks ?? []).filter((root) => {
+      const tree = [root, ...flattenTasks(root.subtasks)];
+      if (!tree.some(matches)) return false;
+      if (q && !tree.some((x) => x.title.includes(q) || x.description.includes(q) || x.notes.includes(q))) return false;
       return true;
     });
   }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate]);
@@ -334,17 +383,17 @@ export default function TaskJournal() {
             }}>
             {sync.icon}{sync.label}
           </button>
-          {pushState !== "unsupported" && (
-            <button onClick={togglePush} title={pushState === "on" ? "התראות פעילות" : "הפעלת התראות"} style={{
+          <button onClick={togglePush}
+            title={pushState === "on" ? "התראות פעילות — לחיצה מציגה אבחון" : pushState === "off" ? "הפעלת התראות" : "לחיצה מציגה אבחון התראות"}
+            style={{
               display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontFamily: "inherit",
               border: `1px solid ${pushState === "on" ? `${T.mint}66` : T.line}`, borderRadius: 99, padding: "5px 12px",
               background: pushState === "on" ? T.mintSoft : "transparent",
               color: pushState === "on" ? T.mint : pushState === "denied" ? T.danger : T.ink2,
               cursor: "pointer",
             }}>
-              {Ic.bell(13)} {pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : "הפעל התראות"}
-            </button>
-          )}
+            {Ic.bell(13)} {pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : pushState === "unsupported" ? "התראות — נדרשת התקנה" : "הפעל התראות"}
+          </button>
           <button onClick={createTask} className="tj-newbtn" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             background: T.grad, color: "#fff", border: "none", borderRadius: 11,

@@ -125,7 +125,8 @@ export async function diagnosePush(): Promise<PushDiag> {
 }
 
 // התראת מערכת דרך ה-Service Worker (עובד באנדרואיד/PWA, בניגוד ל-new Notification)
-export async function showLocalNotification(title: string, body: string): Promise<void> {
+// tag משותף עם הפוש מהשרת — אותה תזכורת לא תופיע פעמיים כשהיומן פתוח
+export async function showLocalNotification(title: string, body: string, tag?: string): Promise<void> {
   if (!pushSupported() || Notification.permission !== "granted") return;
   try {
     const reg = (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.ready);
@@ -136,6 +137,7 @@ export async function showLocalNotification(title: string, body: string): Promis
         badge: "/icon-192.png",
         dir: "rtl",
         lang: "he",
+        tag,
       });
       return;
     }
@@ -143,7 +145,7 @@ export async function showLocalNotification(title: string, body: string): Promis
     /* fall through */
   }
   try {
-    new Notification(title, { body, icon: "/icon-192.png" });
+    new Notification(title, { body, icon: "/icon-192.png", tag });
   } catch {
     /* best-effort */
   }

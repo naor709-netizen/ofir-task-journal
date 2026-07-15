@@ -11,9 +11,11 @@ import {
   replaceTaskInTree, removeTaskFromTree, flattenTasks, countSubtasks,
   toDateKey, formatDateHe,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS,
-  HE_MONTHS, HE_WEEKDAYS, CATEGORY_COLOR_CHOICES,
+  HE_MONTHS, HE_WEEKDAYS, HE_WEEKDAYS_FULL, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
 import { pushPermission, isSubscribed, enablePush, diagnosePush, showLocalNotification, sendTestPush } from "@/lib/push";
+import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
+import { celebrate } from "@/lib/celebrate";
 import { T, card, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
@@ -310,11 +312,30 @@ export default function TaskJournal() {
   }
 
   function setTaskStatus(t: Task, status: TaskStatus) {
+    if (status === "done" && t.status !== "done") celebrate();
     saveTask({
       ...t,
       status,
       endDate: status === "done" ? (t.endDate ?? todayKey) : t.endDate,
     });
+  }
+
+  // ---- quick add — עברית חופשית ----
+  const [quickText, setQuickText] = useState("");
+  function quickAdd() {
+    if (!journal || !quickText.trim()) return;
+    const p = parseQuickAdd(quickText);
+    if (!p.title) { toast("חסר שם למשימה", "error"); return; }
+    const t: Task = {
+      ...emptyTask(),
+      title: p.title,
+      critical: p.critical,
+      dueDate: p.dueDate ?? todayKey,
+      reminders: p.reminder ? [{ id: uid(), datetime: p.reminder, note: "", fired: false }] : [],
+    };
+    persist({ ...journal, tasks: [t, ...journal.tasks] });
+    setQuickText("");
+    toast(p.summary, "success");
   }
 
   function cycleStatus(t: Task) {
@@ -677,6 +698,56 @@ export default function TaskJournal() {
 
           {view === "dashboard" && (
             <>
+              {/* hero — ברכה אישית + הוספה מהירה */}
+              <section className="tj-card" style={{ ...card, padding: "16px 18px", background: `linear-gradient(135deg, ${T.surface} 60%, ${T.accentSoft})` }}>
+                {(() => {
+                  const h = today.getHours();
+                  const greet = h < 5 ? "לילה טוב" : h < 12 ? "בוקר טוב" : h < 17 ? "צהריים טובים" : h < 22 ? "ערב טוב" : "לילה טוב";
+                  const emoji = h < 5 ? "🌙" : h < 12 ? "☀️" : h < 17 ? "🌤️" : h < 22 ? "🌇" : "🌙";
+                  const todayCount = allFlat.filter((t) => !isDone(t) && t.dueDate === todayKey).length;
+                  const bits: string[] = [];
+                  if (todayCount > 0) bits.push(`${todayCount} משימות להיום`);
+                  if (overdueCount > 0) bits.push(`${overdueCount} באיחור`);
+                  if (criticalCount > 0) bits.push(`${criticalCount} קריטיות`);
+                  const heb = hebrewDateToday(today);
+                  return (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.01em" }}>
+                        {emoji} {greet}, אופיר
+                      </div>
+                      <div style={{ fontSize: 12, color: T.ink2, marginTop: 3 }}>
+                        יום {HE_WEEKDAYS_FULL[today.getDay()]}, <span className="num">{today.getDate()}.{today.getMonth() + 1}</span>
+                        {heb ? <> · {heb}</> : null}
+                        {" · "}
+                        {bits.length ? bits.join(" · ") : "אין משימות להיום — יום נקי ✨"}
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ position: "relative", flex: 1 }}>
+                    <span style={{ position: "absolute", insetInlineStart: 11, top: "50%", transform: "translateY(-50%)", color: T.accent, pointerEvents: "none" }}>
+                      {Ic.plus(14)}
+                    </span>
+                    <input
+                      value={quickText}
+                      onChange={(e) => setQuickText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") quickAdd(); }}
+                      placeholder={'הוספה מהירה — נסה: "להתקשר לדני מחר ב-10:00"'}
+                      style={{ ...inputStyle, width: "100%", paddingInlineStart: 33 }}
+                    />
+                  </div>
+                  <button onClick={quickAdd} disabled={!quickText.trim()} style={{
+                    border: "none", borderRadius: 10, padding: "0 18px", fontSize: 13, fontWeight: 700,
+                    fontFamily: "var(--font-display)", cursor: quickText.trim() ? "pointer" : "default",
+                    background: quickText.trim() ? T.grad : T.surface2,
+                    color: quickText.trim() ? "#fff" : T.ink3,
+                  }}>
+                    הוספה
+                  </button>
+                </div>
+              </section>
+
               {/* KPI strip */}
               <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
                 <Kpi label="משימות פתוחות" value={openCount} icon={Ic.circle(15)} color={T.accent} />

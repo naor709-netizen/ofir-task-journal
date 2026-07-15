@@ -50,6 +50,7 @@ export async function POST(req: Request) {
 
   const supabase = createClient(url, key);
   const now = Date.now();
+  const windowStart = now - 60 * 60 * 1000; // אל תשלח מחדש תזכורות ישנות מלפני שעה
 
   // דופק — מאפשר לאבחון בצד הלקוח לדעת שה-cron אכן מגיע לשרת
   await supabase
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
     for (const t of flatten([row.payload])) {
       for (const r of t.reminders ?? []) {
         const ts = r.datetime ? new Date(r.datetime).getTime() : NaN;
-        if (!r.fired && !isNaN(ts) && ts <= now) {
+        if (!isNaN(ts) && ts <= now && ts >= windowStart) {
           due.push({ reminderId: r.id, title: r.note || t.title || "תזכורת", body: t.title || "" });
         }
       }

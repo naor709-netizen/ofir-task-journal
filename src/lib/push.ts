@@ -124,6 +124,44 @@ export async function diagnosePush(): Promise<PushDiag> {
   return diag;
 }
 
+// התראת מערכת דרך ה-Service Worker (עובד באנדרואיד/PWA, בניגוד ל-new Notification)
+export async function showLocalNotification(title: string, body: string): Promise<void> {
+  if (!pushSupported() || Notification.permission !== "granted") return;
+  try {
+    const reg = (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.ready);
+    if (reg) {
+      await reg.showNotification(title, {
+        body,
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        dir: "rtl",
+        lang: "he",
+      });
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    new Notification(title, { body, icon: "/icon-192.png" });
+  } catch {
+    /* best-effort */
+  }
+}
+
+// שולח התראת-אמת דרך השרת לכל המכשירים הרשומים (בדיקת מסירה)
+export async function sendTestPush(): Promise<PushResult> {
+  try {
+    const res = await fetch("/api/test-push", { method: "POST" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, reason: json?.error || `http-${res.status}` };
+    if ((json?.sent ?? 0) === 0) return { ok: false, reason: json?.subscriptions ? "no-delivery" : "no-subscriptions" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : "failed" };
+  }
+}
+
 export async function disablePush(): Promise<void> {
   if (!pushSupported()) return;
   try {

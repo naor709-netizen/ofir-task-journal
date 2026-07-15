@@ -13,7 +13,7 @@ import {
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS,
   HE_MONTHS, HE_WEEKDAYS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
-import { pushPermission, isSubscribed, enablePush, diagnosePush } from "@/lib/push";
+import { pushPermission, isSubscribed, enablePush, diagnosePush, showLocalNotification, sendTestPush } from "@/lib/push";
 import { T, card, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
@@ -72,6 +72,7 @@ export default function TaskJournal() {
     })();
     return () => { cancelled = true; };
   }, []);
+  const [testingPush, setTestingPush] = useState(false);
   async function showPushDiag() {
     toast("בודק את מערך ההתראות…", "info");
     const d = await diagnosePush();
@@ -116,11 +117,19 @@ export default function TaskJournal() {
     } else {
       lines.push("← הכול תקין: תזכורות יגיעו גם כשהיומן סגור.");
     }
+    // אם הכול מוגדר — שולחים גם התראת-אמת מיידית, שהמשתמש יראה שהמסירה עובדת בפועל
+    if (d.deviceSubscribed && d.vapidBaked && d.cloudSubscriptions && d.cloudSubscriptions > 0) {
+      const t = await sendTestPush();
+      lines.push("");
+      lines.push(t.ok
+        ? "התראת בדיקה נשלחה עכשיו ✓ — אמורה להופיע כהתראת מערכת תוך כמה שניות."
+        : `שליחת התראת בדיקה נכשלה ✗ (${t.reason ?? ""})`);
+    }
     alert(lines.join("\n"));
   }
 
   async function togglePush() {
-    if (pushState !== "off") { await showPushDiag(); return; }
+    if (pushState !== "off") { setTestingPush(true); await showPushDiag(); setTestingPush(false); return; }
     const r = await enablePush();
     if (r.ok) { setPushState("on"); toast("התראות הופעלו — תזכורות יגיעו גם כשהיומן סגור", "success"); }
     else if (r.reason === "denied") { setPushState("denied"); toast("ההרשאה נדחתה — יש לאשר התראות בהגדרות הדפדפן", "error"); }
@@ -158,9 +167,7 @@ export default function TaskJournal() {
             tasks = replaceTaskInTree(tasks, updated);
             const body = r.note || t.title;
             toast(`תזכורת: ${body}`, "info");
-            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-              new Notification("יומן המשימות של אופיר", { body });
-            }
+            showLocalNotification("יומן המשימות של אופיר", body);
           }
         }
       }
@@ -393,16 +400,16 @@ export default function TaskJournal() {
             }}>
             {sync.icon}{sync.label}
           </button>
-          <button onClick={togglePush}
-            title={pushState === "on" ? "התראות פעילות — לחיצה מציגה אבחון" : pushState === "off" ? "הפעלת התראות" : "לחיצה מציגה אבחון התראות"}
+          <button onClick={togglePush} disabled={testingPush}
+            title={pushState === "on" ? "התראות פעילות — לחיצה מריצה אבחון ושולחת התראת בדיקה" : pushState === "off" ? "הפעלת התראות" : "לחיצה מציגה אבחון התראות"}
             style={{
               display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontFamily: "inherit",
               border: `1px solid ${pushState === "on" ? `${T.mint}66` : T.line}`, borderRadius: 99, padding: "5px 12px",
               background: pushState === "on" ? T.mintSoft : "transparent",
               color: pushState === "on" ? T.mint : pushState === "denied" ? T.danger : T.ink2,
-              cursor: "pointer",
+              cursor: testingPush ? "default" : "pointer", opacity: testingPush ? 0.6 : 1,
             }}>
-            {Ic.bell(13)} {pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : pushState === "unsupported" ? "התראות — נדרשת התקנה" : "הפעל התראות"}
+            {Ic.bell(13)} {testingPush ? "בודק…" : pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : pushState === "unsupported" ? "התראות — נדרשת התקנה" : "הפעל התראות"}
           </button>
           <button onClick={createTask} className="tj-newbtn" style={{
             display: "inline-flex", alignItems: "center", gap: 8,
@@ -441,6 +448,15 @@ export default function TaskJournal() {
               </button>
             )}
           </div>
+
+          <button className="tj-apply-mobile" onClick={() => { setSidebarOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{
+            display: "none", width: "100%", alignItems: "center", justifyContent: "center", gap: 8,
+            background: T.grad, color: "#fff", border: "none", borderRadius: 11,
+            padding: "11px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+            fontFamily: "var(--font-display)", marginBottom: 14,
+          }}>
+            הצגת {filteredTasks.length} תוצאות {Ic.chevL(15)}
+          </button>
 
           <div style={{ position: "relative", marginBottom: 16 }}>
             {/* בלי pointer-events האייקון בולע הקשות על השדה בנייד */}
@@ -601,7 +617,10 @@ export default function TaskJournal() {
         {/* ---- main ---- */}
         <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
 
-          <button className="tj-sidebar-toggle" onClick={() => setSidebarOpen((o) => !o)} style={{
+          <button className="tj-sidebar-toggle" onClick={() => setSidebarOpen((o) => {
+            if (!o) window.scrollTo({ top: 0, behavior: "smooth" });
+            return !o;
+          })} style={{
             display: "none", ...card, padding: "10px 14px", fontSize: 13, fontWeight: 600,
             color: T.ink2, cursor: "pointer", textAlign: "start", fontFamily: "inherit",
             alignItems: "center", gap: 8,
@@ -763,6 +782,7 @@ export default function TaskJournal() {
           .tj-layout { flex-direction: column; }
           .tj-layout > aside { width: 100% !important; position: static !important; }
           .tj-catdel { opacity: 0.7; }
+          .tj-apply-mobile { display: flex !important; }
         }
         input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
         @media (max-width: 640px) {

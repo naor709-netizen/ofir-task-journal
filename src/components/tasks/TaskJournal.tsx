@@ -192,7 +192,8 @@ export default function TaskJournal() {
   }, [catFilter, categories]);
 
   const filteredTasks = useMemo(() => {
-    const q = search.trim();
+    // חיפוש סלחני: לא תלוי רישיות או סדר מילים — כל מילה צריכה להופיע איפשהו במשימה
+    const qWords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     // שלבים הם משימות לכל דבר — שורש עובר סינון אם הוא או אחד השלבים שלו עונה על כל התנאים
     const matches = (t: Task): boolean => {
       if (expandedCatFilter.size > 0 && !(t.categoryId && expandedCatFilter.has(t.categoryId))) return false;
@@ -203,13 +204,22 @@ export default function TaskJournal() {
       if (selectedDate && t.dueDate !== selectedDate && t.endDate !== selectedDate) return false;
       return true;
     };
+    const haystack = (t: Task): string =>
+      [
+        t.title, t.description, t.notes,
+        t.categoryId ? catById[t.categoryId]?.name : "",
+        ...t.reminders.map((r) => r.note),
+      ].filter(Boolean).join(" ").toLowerCase();
     return (journal?.tasks ?? []).filter((root) => {
       const tree = [root, ...flattenTasks(root.subtasks)];
       if (!tree.some(matches)) return false;
-      if (q && !tree.some((x) => x.title.includes(q) || x.description.includes(q) || x.notes.includes(q))) return false;
+      if (qWords.length && !tree.some((x) => {
+        const s = haystack(x);
+        return qWords.every((w) => s.includes(w));
+      })) return false;
       return true;
     });
-  }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate]);
+  }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate, catById]);
 
   const criticalTasks = filteredTasks.filter((t) => t.critical && !isDone(t));
   const regularTasks = filteredTasks.filter((t) => !(t.critical && !isDone(t)));
@@ -433,12 +443,13 @@ export default function TaskJournal() {
           </div>
 
           <div style={{ position: "relative", marginBottom: 16 }}>
-            <span style={{ position: "absolute", insetInlineStart: 10, top: "50%", transform: "translateY(-50%)", color: T.ink3 }}>
+            {/* בלי pointer-events האייקון בולע הקשות על השדה בנייד */}
+            <span style={{ position: "absolute", insetInlineStart: 10, top: "50%", transform: "translateY(-50%)", color: T.ink3, pointerEvents: "none" }}>
               {Ic.search(14)}
             </span>
             <input
-              placeholder="חיפוש משימה…" value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              type="search" inputMode="search" placeholder="חיפוש משימה…" value={search}
+              onChange={(e) => { setSearch(e.target.value); if (selectedDate) setSelectedDate(null); }}
               style={{ ...inputStyle, width: "100%", paddingInlineStart: 32 }}
             />
           </div>
@@ -753,7 +764,10 @@ export default function TaskJournal() {
           .tj-layout > aside { width: 100% !important; position: static !important; }
           .tj-catdel { opacity: 0.7; }
         }
+        input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
         @media (max-width: 640px) {
+          /* פונט מתחת ל-16px גורם לזום אוטומטי של iOS בפוקוס על שדה */
+          input, textarea, select { font-size: 16px !important; }
           .tj-toolbar { padding: 10px 10px 0 !important; }
           .tj-layout { padding: 10px 10px 40px !important; gap: 10px !important; }
           .tj-card { padding: 12px !important; }

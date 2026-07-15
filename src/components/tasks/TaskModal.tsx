@@ -54,12 +54,28 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
   const current = useMemo(() => taskAtPath(draft, path), [draft, path]);
   const isRoot = path.length === 1;
 
+  // סגירה בכל דרך שאינה "ביטול" שומרת שינויים אוטומטית — בלי זה, הקשה על הרקע
+  // בנייד (או Escape) הייתה זורקת את כל מה שהוקלד, כולל משימה חדשה שלמה
+  function requestClose() {
+    const titled = draft.title.trim().length > 0;
+    if (dirty && titled) {
+      onSave(draft);
+      toast("נשמר", "success");
+      onClose();
+      return;
+    }
+    if (dirty && !titled && !isNew && !confirm("למשימה אין שם והשינויים לא יישמרו — לסגור בכל זאת?")) return;
+    onClose();
+  }
+  const requestCloseRef = useRef(requestClose);
+  useEffect(() => { requestCloseRef.current = requestClose; });
+
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") requestCloseRef.current(); }
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
-  }, [onClose]);
+  }, []);
 
   function patch(p: Partial<Task>) {
     setDraft((d) => {
@@ -144,7 +160,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
 
   return (
     <div
-      onClick={onClose}
+      onClick={requestClose}
       style={{
         position: "fixed", inset: 0, zIndex: 100, background: "rgba(4,9,18,0.72)",
         backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 14,
@@ -206,7 +222,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
                 )}
               </div>
             </div>
-            <button onClick={onClose} title="סגירה" style={{
+            <button onClick={requestClose} title="סגירה" style={{
               background: T.surface2, border: "none", color: T.ink2,
               width: 30, height: 30, borderRadius: 9, cursor: "pointer", flexShrink: 0,
               display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -500,8 +516,8 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
             </button>
           )}
           <div style={{ marginInlineStart: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-            {dirty && <span style={{ fontSize: 10.5, color: T.ink3 }}>שינויים שלא נשמרו</span>}
-            <button onClick={onClose} style={{
+            {dirty && <span style={{ fontSize: 10.5, color: T.ink3 }}>נשמר אוטומטית בסגירה</span>}
+            <button onClick={() => { if (!dirty || confirm("לבטל את השינויים שהוקלדו?")) onClose(); }} style={{
               background: "transparent", border: `1px solid ${T.line}`, color: T.ink2,
               borderRadius: 10, padding: "8px 16px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
             }}>ביטול</button>

@@ -101,6 +101,7 @@ export const Ic = {
   checkCircle: (s?: number) => <I size={s}><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12.5 2.5 2.5 4.5-5" /></I>,
   alert: (s?: number) => <I size={s}><path d="M12 3 2.5 20h19L12 3Z" /><path d="M12 10v4.5M12 17.5v.1" /></I>,
   bell: (s?: number) => <I size={s}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z" /><path d="M10.5 20a2 2 0 0 0 3 0" /></I>,
+  share: (s?: number) => <I size={s}><circle cx="6" cy="12" r="2.5" /><circle cx="17.5" cy="5.5" r="2.5" /><circle cx="17.5" cy="18.5" r="2.5" /><path d="m8.3 10.8 6.9-4M8.3 13.2l6.9 4" /></I>,
 };
 
 export function StatusIcon({ status, size = 16 }: { status: "todo" | "in_progress" | "done"; size?: number }) {

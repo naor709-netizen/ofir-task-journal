@@ -240,6 +240,37 @@ export default function TaskJournal() {
   const criticalCount = allFlat.filter((t) => t.critical && !isDone(t)).length;
   const overdueCount = allFlat.filter((t) => !isDone(t) && t.dueDate && t.dueDate < todayKey).length;
 
+  // רצף ימים עם לפחות השלמה אחת (אם היום עוד ריק — הרצף נספר עד אתמול)
+  const streak = useMemo(() => {
+    const days = new Set(allFlat.filter((t) => isDone(t) && t.endDate).map((t) => t.endDate as string));
+    let s = 0;
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (!days.has(toDateKey(d))) d.setDate(d.getDate() - 1);
+    while (days.has(toDateKey(d))) { s++; d.setDate(d.getDate() - 1); }
+    return s;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allFlat, todayKey]);
+
+  function shareDay() {
+    const todays = allFlat.filter((t) => t.dueDate === todayKey);
+    const overdue = allFlat.filter((t) => !isDone(t) && t.dueDate && t.dueDate < todayKey);
+    const lines = [
+      `📋 היומן של אופיר — יום ${HE_WEEKDAYS_FULL[today.getDay()]} ${today.getDate()}.${today.getMonth() + 1}`,
+      "",
+      ...(todays.length
+        ? todays.map((t) => `${isDone(t) ? "✅" : t.critical ? "🔴" : "◻️"} ${t.title}${t.status === "in_progress" ? " (בתהליך)" : ""}`)
+        : ["אין משימות להיום ✨"]),
+    ];
+    if (overdue.length) lines.push("", `⏰ ${overdue.length} משימות באיחור`);
+    if (streak >= 2) lines.push("", `🔥 רצף של ${streak} ימים`);
+    const text = lines.join("\n");
+    if (typeof navigator !== "undefined" && navigator.share) {
+      navigator.share({ text }).catch(() => { /* בוטל */ });
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    }
+  }
+
   const upcomingReminders = useMemo(() => {
     if (!nowTick) return [];
     return allFlat
@@ -275,6 +306,7 @@ export default function TaskJournal() {
       ? `למחוק את הקטגוריה "${cat?.name ?? ""}"? ${assigned} משימות ישוחררו ממנה (המשימות עצמן יישארו).`
       : `למחוק את הקטגוריה "${cat?.name ?? ""}"?`;
     if (!confirm(msg)) return;
+    const prev = journal;
     const clearCat = (list: Task[]): Task[] =>
       list.map((t) => ({
         ...t,
@@ -288,7 +320,8 @@ export default function TaskJournal() {
         .map((c) => (c.parentId === id ? { ...c, parentId: null } : c)),
       tasks: clearCat(journal.tasks),
     });
-    setCatFilter((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    setCatFilter((p) => { const n = new Set(p); n.delete(id); return n; });
+    toast("הקטגוריה נמחקה", "info", { label: "ביטול", onClick: () => persist(prev) });
   }
 
   function createTask() {
@@ -306,9 +339,10 @@ export default function TaskJournal() {
 
   function deleteTask(id: string) {
     if (!journal) return;
+    const prev = journal;
     persist({ ...journal, tasks: removeTaskFromTree(journal.tasks, id) });
     setOpenTaskId(null);
-    toast("המשימה נמחקה", "info");
+    toast("המשימה נמחקה", "info", { label: "ביטול", onClick: () => persist(prev) });
   }
 
   function setTaskStatus(t: Task, status: TaskStatus) {
@@ -711,16 +745,34 @@ export default function TaskJournal() {
                   if (criticalCount > 0) bits.push(`${criticalCount} קריטיות`);
                   const heb = hebrewDateToday(today);
                   return (
-                    <div style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.01em" }}>
-                        {emoji} {greet}, אופיר
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span>{emoji} {greet}, אופיר</span>
+                          {streak >= 2 && (
+                            <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
+                              fontSize: 11.5, fontWeight: 700, color: "#C2410C", background: "#FFEDD5",
+                              borderRadius: 99, padding: "3px 10px",
+                            }}>
+                              🔥 רצף {streak} ימים
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: T.ink2, marginTop: 3 }}>
+                          יום {HE_WEEKDAYS_FULL[today.getDay()]}, <span className="num">{today.getDate()}.{today.getMonth() + 1}</span>
+                          {heb ? <> · {heb}</> : null}
+                          {" · "}
+                          {bits.length ? bits.join(" · ") : "אין משימות להיום — יום נקי ✨"}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, color: T.ink2, marginTop: 3 }}>
-                        יום {HE_WEEKDAYS_FULL[today.getDay()]}, <span className="num">{today.getDate()}.{today.getMonth() + 1}</span>
-                        {heb ? <> · {heb}</> : null}
-                        {" · "}
-                        {bits.length ? bits.join(" · ") : "אין משימות להיום — יום נקי ✨"}
-                      </div>
+                      <button onClick={shareDay} title="שיתוף סיכום היום (וואטסאפ וכו׳)" style={{
+                        display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0,
+                        background: "transparent", border: `1px solid ${T.line}`, color: T.ink2,
+                        borderRadius: 99, padding: "6px 13px", fontSize: 11.5, fontWeight: 600,
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}>
+                        {Ic.share(13)} שיתוף היום
+                      </button>
                     </div>
                   );
                 })()}

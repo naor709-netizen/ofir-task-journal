@@ -4,14 +4,20 @@ import { createContext, useContext, useState, useCallback, useEffect } from "rea
 
 type ToastType = "success" | "error" | "info" | "warning";
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   type: ToastType;
   message: string;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
-  toast: (message: string, type?: ToastType) => void;
+  toast: (message: string, type?: ToastType, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -33,12 +39,12 @@ const COLORS = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const toast = useCallback((message: string, type: ToastType = "info") => {
+  const toast = useCallback((message: string, type: ToastType = "info", action?: ToastAction) => {
     const id = Math.random().toString(36).slice(2);
-    setToasts(t => [...t, { id, type, message }]);
+    setToasts(t => [...t, { id, type, message, action }]);
     setTimeout(() => {
       setToasts(t => t.filter(x => x.id !== id));
-    }, 4000);
+    }, action ? 6000 : 4000); // עם כפתור פעולה — זמן להספיק ללחוץ
   }, []);
 
   return (
@@ -89,6 +95,18 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         fontWeight: 600, fontSize: 12, flexShrink: 0,
       }}>{ICONS[toast.type]}</span>
       <span style={{ flex: 1 }}>{toast.message}</span>
+      {toast.action && (
+        <button
+          onClick={(e) => { e.stopPropagation(); toast.action!.onClick(); onDismiss(); }}
+          style={{
+            background: c.color, color: c.bg, border: "none",
+            borderRadius: 8, padding: "5px 14px", fontSize: 12.5, fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   );
 }

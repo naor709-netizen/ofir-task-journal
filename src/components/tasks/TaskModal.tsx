@@ -9,6 +9,7 @@ import {
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
 import { T, chip, inputStyle, Ic, StatusIcon } from "./ui";
+import { celebrate } from "@/lib/celebrate";
 
 const MAX_FILE_BYTES = 1.5 * 1024 * 1024;
 
@@ -86,6 +87,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
   }
 
   function setStatus(s: TaskStatus) {
+    if (s === "done" && current.status !== "done") celebrate();
     patch({
       status: s,
       endDate: s === "done" && !current.endDate ? new Date().toISOString().slice(0, 10) : current.endDate,

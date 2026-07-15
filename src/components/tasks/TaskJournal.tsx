@@ -167,7 +167,7 @@ export default function TaskJournal() {
             tasks = replaceTaskInTree(tasks, updated);
             const body = r.note || t.title;
             toast(`תזכורת: ${body}`, "info");
-            showLocalNotification("יומן המשימות של אופיר", body);
+            showLocalNotification("יומן המשימות של אופיר", body, r.id);
           }
         }
       }
@@ -267,6 +267,12 @@ export default function TaskJournal() {
 
   function deleteCategory(id: string) {
     if (!journal) return;
+    const cat = catById[id];
+    const assigned = flattenTasks(journal.tasks).filter((t) => t.categoryId === id).length;
+    const msg = assigned > 0
+      ? `למחוק את הקטגוריה "${cat?.name ?? ""}"? ${assigned} משימות ישוחררו ממנה (המשימות עצמן יישארו).`
+      : `למחוק את הקטגוריה "${cat?.name ?? ""}"?`;
+    if (!confirm(msg)) return;
     const clearCat = (list: Task[]): Task[] =>
       list.map((t) => ({
         ...t,

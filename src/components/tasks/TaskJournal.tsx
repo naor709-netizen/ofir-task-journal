@@ -458,7 +458,7 @@ export default function TaskJournal() {
             הצגת {filteredTasks.length} תוצאות {Ic.chevL(15)}
           </button>
 
-          <div style={{ position: "relative", marginBottom: 16 }}>
+          <div style={{ position: "relative", marginBottom: 10 }}>
             {/* בלי pointer-events האייקון בולע הקשות על השדה בנייד */}
             <span style={{ position: "absolute", insetInlineStart: 10, top: "50%", transform: "translateY(-50%)", color: T.ink3, pointerEvents: "none" }}>
               {Ic.search(14)}
@@ -466,9 +466,50 @@ export default function TaskJournal() {
             <input
               type="search" inputMode="search" placeholder="חיפוש משימה…" value={search}
               onChange={(e) => { setSearch(e.target.value); if (selectedDate) setSelectedDate(null); }}
+              onKeyDown={(e) => {
+                // מקש "חיפוש" במקלדת של הנייד = Enter — מיישם את הסינון ומציג את התוצאות
+                if (e.key === "Enter") {
+                  e.currentTarget.blur();
+                  setSidebarOpen(false);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              }}
               style={{ ...inputStyle, width: "100%", paddingInlineStart: 32 }}
             />
           </div>
+
+          {/* פידבק חי בזמן הקלדה — בנייד התוצאות מוסתרות מאחורי הפאנל */}
+          {search.trim() !== "" && (
+            <div className="tj-search-live" style={{
+              display: "none", flexDirection: "column", gap: 5, marginBottom: 14,
+              background: T.bg2, border: `1px solid ${T.line}`, borderRadius: 11, padding: 10,
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: filteredTasks.length === 0 ? T.danger : T.ink2 }}>
+                {filteredTasks.length === 0 ? "לא נמצאו משימות תואמות" : `נמצאו ${filteredTasks.length} משימות — הקשה פותחת:`}
+              </span>
+              {filteredTasks.slice(0, 5).map((t) => (
+                <button key={t.id} onClick={() => setOpenTaskId(t.id)} style={{
+                  display: "flex", alignItems: "center", gap: 8, textAlign: "start",
+                  background: T.surface, border: `1px solid ${T.line}`, borderRadius: 9,
+                  padding: "8px 10px", fontSize: 12.5, fontWeight: 500, color: T.ink,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  <span style={{ color: STATUS_COLORS[t.status], display: "inline-flex", flexShrink: 0 }}>
+                    <StatusIcon status={t.status} size={13} />
+                  </span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.title || "ללא שם"}</span>
+                </button>
+              ))}
+              {filteredTasks.length > 5 && (
+                <button onClick={() => { setSidebarOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{
+                  background: "none", border: "none", color: T.accent, fontSize: 11.5,
+                  cursor: "pointer", fontFamily: "inherit", textAlign: "start", padding: "2px 0",
+                }}>
+                  לכל {filteredTasks.length} התוצאות ←
+                </button>
+              )}
+            </div>
+          )}
 
           <SectionTitle>קטגוריות</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
@@ -783,6 +824,7 @@ export default function TaskJournal() {
           .tj-layout > aside { width: 100% !important; position: static !important; }
           .tj-catdel { opacity: 0.7; }
           .tj-apply-mobile { display: flex !important; }
+          .tj-search-live { display: flex !important; }
         }
         input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
         @media (max-width: 640px) {

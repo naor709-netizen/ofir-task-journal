@@ -5,6 +5,50 @@
   --font-display: 'Rubik', 'Heebo', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   color-scheme: light;
+
+  /* ערכת נושא — בהיר (ברירת מחדל) */
+  --tj-bg: #F2F5F9;
+  --tj-bg2: #F7FAFD;
+  --tj-surface: #FFFFFF;
+  --tj-surface2: #EAF0F7;
+  --tj-input: #FFFFFF;
+  --tj-line: rgba(23,43,77,0.12);
+  --tj-line-strong: rgba(23,43,77,0.24);
+  --tj-ink: #15253F;
+  --tj-ink2: #4A5E78;
+  --tj-ink3: #7C8DA4;
+  --tj-accent: #2563EB;
+  --tj-accent-soft: rgba(37,99,235,0.10);
+  --tj-mint: #0FA47E;
+  --tj-mint-soft: rgba(15,164,126,0.12);
+  --tj-danger: #DC2626;
+  --tj-danger-soft: rgba(220,38,38,0.10);
+  --tj-amber: #B45309;
+  --tj-chipmix: #000000;
+  --tj-shadow: rgba(23,43,77,0.06);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --tj-bg: #0B1220;
+  --tj-bg2: #0F1729;
+  --tj-surface: #131D31;
+  --tj-surface2: #1C2A44;
+  --tj-input: #0F1729;
+  --tj-line: rgba(148,178,255,0.14);
+  --tj-line-strong: rgba(148,178,255,0.30);
+  --tj-ink: #E8EFFA;
+  --tj-ink2: #A5B6D0;
+  --tj-ink3: #7488A9;
+  --tj-accent: #5B8CFF;
+  --tj-accent-soft: rgba(91,140,255,0.16);
+  --tj-mint: #2BC29A;
+  --tj-mint-soft: rgba(43,194,154,0.16);
+  --tj-danger: #F26D6D;
+  --tj-danger-soft: rgba(242,109,109,0.14);
+  --tj-amber: #E8A13D;
+  --tj-chipmix: #FFFFFF;
+  --tj-shadow: rgba(0,0,0,0.35);
 }
 
 * { box-sizing: border-box; }
@@ -13,11 +57,12 @@ html { direction: rtl; }
 
 body {
   margin: 0;
-  background: #F2F5F9;
-  color: #15253F;
+  background: var(--tj-bg);
+  color: var(--tj-ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background .25s ease, color .25s ease;
 }
 
 button { transition: background .15s, transform .1s, border-color .15s; font-family: inherit; }

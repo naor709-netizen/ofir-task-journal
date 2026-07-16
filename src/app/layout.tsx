@@ -26,6 +26,12 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl">
       <body>
+        {/* קובע את ערכת הנושא לפני הציור הראשון — מונע הבזק לבן במצב כהה */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("ofir-theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.dataset.theme="dark"}catch(e){}`,
+          }}
+        />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

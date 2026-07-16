@@ -8,7 +8,7 @@ import {
   formatDateHe, formatDateTimeHe, isoToLocalInput, localInputToIso,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
-import { T, chip, inputStyle, Ic, StatusIcon } from "./ui";
+import { T, alpha, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { celebrate } from "@/lib/celebrate";
 
 const MAX_FILE_BYTES = 1.5 * 1024 * 1024;
@@ -353,7 +353,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
               {current.reminders.map((r) => (
                 <div key={r.id} style={{
                   display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap",
-                  background: T.surface, border: `1px solid ${r.fired ? T.line : `${T.mint}44`}`,
+                  background: T.surface, border: `1px solid ${r.fired ? T.line : `${alpha(T.mint, 27)}`}`,
                   borderRadius: 10, padding: "7px 9px",
                 }}>
                   <input
@@ -477,7 +477,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
                   </div>
                 );
               })}
-              <button onClick={addSubtask} style={{ ...addBtnStyle, color: T.accent, borderColor: `${T.accent}55`, background: T.accentSoft }}>
+              <button onClick={addSubtask} style={{ ...addBtnStyle, color: T.accent, borderColor: `${alpha(T.accent, 33)}`, background: T.accentSoft }}>
                 {Ic.plus(12)} הוספת שלב
               </button>
               <div style={{ fontSize: 10.5, color: T.ink3 }}>
@@ -503,7 +503,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
         }}>
           <button onClick={deleteCurrent} style={{
             display: "inline-flex", alignItems: "center", gap: 6,
-            background: "transparent", border: `1px solid ${T.danger}55`, color: T.danger,
+            background: "transparent", border: `1px solid ${alpha(T.danger, 33)}`, color: T.danger,
             borderRadius: 10, padding: "8px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 500, fontFamily: "inherit",
           }}>
             {Ic.trash(13)} {isRoot ? "מחיקת משימה" : "מחיקת שלב"}

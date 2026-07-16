@@ -4,32 +4,38 @@
 // יומן המשימות — light premium theme + icon set
 // ============================================
 
+// טוקנים כ-CSS variables — הערכים (בהיר/כהה) מוגדרים ב-globals.css
 export const T = {
-  bg: "#F2F5F9",
-  bg2: "#F7FAFD",
-  surface: "#FFFFFF",
-  surface2: "#EAF0F7",
-  line: "rgba(23,43,77,0.12)",
-  lineStrong: "rgba(23,43,77,0.24)",
-  ink: "#15253F",
-  ink2: "#4A5E78",
-  ink3: "#7C8DA4",
-  accent: "#2563EB",
-  accentSoft: "rgba(37,99,235,0.10)",
-  mint: "#0FA47E",
-  mintSoft: "rgba(15,164,126,0.12)",
+  bg: "var(--tj-bg)",
+  bg2: "var(--tj-bg2)",
+  surface: "var(--tj-surface)",
+  surface2: "var(--tj-surface2)",
+  line: "var(--tj-line)",
+  lineStrong: "var(--tj-line-strong)",
+  ink: "var(--tj-ink)",
+  ink2: "var(--tj-ink2)",
+  ink3: "var(--tj-ink3)",
+  accent: "var(--tj-accent)",
+  accentSoft: "var(--tj-accent-soft)",
+  mint: "var(--tj-mint)",
+  mintSoft: "var(--tj-mint-soft)",
   grad: "linear-gradient(120deg,#2563EB 0%,#0FA47E 100%)",
-  danger: "#DC2626",
-  dangerSoft: "rgba(220,38,38,0.10)",
-  amber: "#B45309",
+  danger: "var(--tj-danger)",
+  dangerSoft: "var(--tj-danger-soft)",
+  amber: "var(--tj-amber)",
   r: 14,
 };
+
+// שקיפות מעל טוקן/צבע — עובד גם על var() וגם על hex
+export function alpha(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
 
 export const card: React.CSSProperties = {
   background: T.surface,
   border: `1px solid ${T.line}`,
   borderRadius: 16,
-  boxShadow: "0 1px 3px rgba(23,43,77,0.06)",
+  boxShadow: "0 1px 3px var(--tj-shadow)",
 };
 
 export function chip(color: string, active: boolean): React.CSSProperties {
@@ -38,14 +44,14 @@ export function chip(color: string, active: boolean): React.CSSProperties {
     borderRadius: 8, padding: "5px 11px", fontSize: 12, cursor: "pointer",
     fontFamily: "inherit", fontWeight: active ? 600 : 400,
     border: `1px solid ${active ? color : T.line}`,
-    background: active ? `${color}1F` : "transparent",
+    background: active ? alpha(color, 12) : "transparent",
     color: active ? color : T.ink2,
     transition: "border-color .15s, background .15s, color .15s",
   };
 }
 
 export const inputStyle: React.CSSProperties = {
-  background: "#FFFFFF",
+  background: "var(--tj-input)",
   border: `1px solid ${T.lineStrong}`,
   borderRadius: 10,
   color: T.ink,
@@ -53,7 +59,6 @@ export const inputStyle: React.CSSProperties = {
   fontSize: 13,
   fontFamily: "inherit",
   outline: "none",
-  colorScheme: "light",
 };
 
 // ---------- icons (stroke, currentColor) ----------
@@ -102,6 +107,8 @@ export const Ic = {
   alert: (s?: number) => <I size={s}><path d="M12 3 2.5 20h19L12 3Z" /><path d="M12 10v4.5M12 17.5v.1" /></I>,
   bell: (s?: number) => <I size={s}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z" /><path d="M10.5 20a2 2 0 0 0 3 0" /></I>,
   share: (s?: number) => <I size={s}><circle cx="6" cy="12" r="2.5" /><circle cx="17.5" cy="5.5" r="2.5" /><circle cx="17.5" cy="18.5" r="2.5" /><path d="m8.3 10.8 6.9-4M8.3 13.2l6.9 4" /></I>,
+  moon: (s?: number) => <I size={s} d="M20 13.5A8 8 0 1 1 10.5 4 6.5 6.5 0 0 0 20 13.5Z" />,
+  sun: (s?: number) => <I size={s}><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19" /></I>,
 };
 
 export function StatusIcon({ status, size = 16 }: { status: "todo" | "in_progress" | "done"; size?: number }) {

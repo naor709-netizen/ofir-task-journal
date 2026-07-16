@@ -16,7 +16,7 @@ import {
 import { pushPermission, isSubscribed, enablePush, diagnosePush, showLocalNotification, sendTestPush } from "@/lib/push";
 import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
-import { T, card, chip, inputStyle, Ic, StatusIcon } from "./ui";
+import { T, alpha, card, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 
@@ -60,6 +60,19 @@ export default function TaskJournal() {
   const [newCatParent, setNewCatParent] = useState<string | null>(null);
 
   useEffect(() => { initJournalSync(); }, []);
+
+  // ---- theme (בהיר/כהה) — ה-DOM כבר נקבע ע"י הסקריפט ב-layout לפני הציור הראשון ----
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = localStorage.getItem("ofir-theme");
+    return saved === "dark" || (!saved && window.matchMedia?.("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  });
+  function toggleTheme() {
+    const t = theme === "dark" ? "light" : "dark";
+    setTheme(t);
+    localStorage.setItem("ofir-theme", t);
+    document.documentElement.dataset.theme = t;
+  }
 
   // ---- push notifications ----
   const [pushState, setPushState] = useState<"unsupported" | "off" | "on" | "denied">("off");
@@ -461,11 +474,18 @@ export default function TaskJournal() {
             }}>
             {sync.icon}{sync.label}
           </button>
+          <button onClick={toggleTheme} title={theme === "dark" ? "מעבר למצב בהיר" : "מעבר למצב כהה"} style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 30, height: 30, borderRadius: 99, border: `1px solid ${T.line}`,
+            background: "transparent", color: T.ink2, cursor: "pointer",
+          }}>
+            {theme === "dark" ? Ic.sun(14) : Ic.moon(14)}
+          </button>
           <button onClick={togglePush} disabled={testingPush}
             title={pushState === "on" ? "התראות פעילות — לחיצה מריצה אבחון ושולחת התראת בדיקה" : pushState === "off" ? "הפעלת התראות" : "לחיצה מציגה אבחון התראות"}
             style={{
               display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontFamily: "inherit",
-              border: `1px solid ${pushState === "on" ? `${T.mint}66` : T.line}`, borderRadius: 99, padding: "5px 12px",
+              border: `1px solid ${pushState === "on" ? `${alpha(T.mint, 40)}` : T.line}`, borderRadius: 99, padding: "5px 12px",
               background: pushState === "on" ? T.mintSoft : "transparent",
               color: pushState === "on" ? T.mint : pushState === "denied" ? T.danger : T.ink2,
               cursor: testingPush ? "default" : "pointer", opacity: testingPush ? 0.6 : 1,
@@ -650,7 +670,7 @@ export default function TaskJournal() {
                 background: newCatName.trim() ? T.accentSoft : T.surface,
                 color: newCatName.trim() ? T.accent : T.ink3,
                 cursor: newCatName.trim() ? "pointer" : "default",
-                boxShadow: newCatName.trim() ? `inset 0 0 0 1px ${T.accent}55` : `inset 0 0 0 1px ${T.line}`,
+                boxShadow: newCatName.trim() ? `inset 0 0 0 1px ${alpha(T.accent, 33)}` : `inset 0 0 0 1px ${T.line}`,
               }}>
               הוספה
             </button>
@@ -671,7 +691,7 @@ export default function TaskJournal() {
             {([["all", "הכל"], ["active", "פעילות"], ["done", "הושלמו"]] as const).map(([v, label]) => (
               <button key={v} onClick={() => setStatusFilter(v)} style={{
                 flex: 1, borderRadius: 9, padding: "7px 0", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-                border: `1px solid ${statusFilter === v ? `${T.accent}66` : T.line}`,
+                border: `1px solid ${statusFilter === v ? `${alpha(T.accent, 40)}` : T.line}`,
                 background: statusFilter === v ? T.accentSoft : "transparent",
                 color: statusFilter === v ? T.accent : T.ink2, fontWeight: statusFilter === v ? 600 : 400,
               }}>{label}</button>
@@ -681,7 +701,7 @@ export default function TaskJournal() {
           <button onClick={() => setCriticalOnly(!criticalOnly)} style={{
             display: "flex", alignItems: "center", gap: 8, width: "100%",
             background: criticalOnly ? T.dangerSoft : "transparent",
-            border: `1px solid ${criticalOnly ? `${T.danger}55` : T.line}`,
+            border: `1px solid ${criticalOnly ? `${alpha(T.danger, 33)}` : T.line}`,
             borderRadius: 9, padding: "8px 10px", fontSize: 12.5, cursor: "pointer",
             color: criticalOnly ? T.danger : T.ink2, fontWeight: criticalOnly ? 600 : 400,
             fontFamily: "inherit", marginBottom: 18,
@@ -810,7 +830,7 @@ export default function TaskJournal() {
 
               {/* critical strip */}
               {criticalTasks.length > 0 && (
-                <section className="tj-card" style={{ ...card, padding: 16, borderColor: `${T.danger}44` }}>
+                <section className="tj-card" style={{ ...card, padding: 16, borderColor: `${alpha(T.danger, 27)}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                     <span style={{ color: T.danger }}>{Ic.flame(16)}</span>
                     <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>משימות קריטיות</h2>
@@ -1197,7 +1217,7 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
               style={{
                 minHeight: 72, borderRadius: 10, padding: "4px 5px", cursor: "pointer",
                 background: isSelected ? T.mintSoft : T.bg2,
-                border: `1px solid ${isSelected ? `${T.mint}66` : isToday ? T.accent : T.line}`,
+                border: `1px solid ${isSelected ? `${alpha(T.mint, 40)}` : isToday ? T.accent : T.line}`,
                 display: "flex", flexDirection: "column", gap: 3, overflow: "hidden",
               }}
             >
@@ -1240,10 +1260,7 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
   );
 }
 
-// טקסט על צ'יפ צבעוני בלוח — גרסה כהה של צבע הקטגוריה שקריאה על בהיר
+// טקסט על צ'יפ צבעוני בלוח — מעמיק לכיוון שחור בבהיר ומבהיר לכיוון לבן בכהה
 function mixToInk(hex: string): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  const deepen = (v: number) => Math.round(v * 0.62);
-  return `rgb(${deepen(r)},${deepen(g)},${deepen(b)})`;
+  return `color-mix(in srgb, ${hex} 62%, var(--tj-chipmix))`;
 }

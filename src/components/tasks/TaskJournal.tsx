@@ -8,7 +8,7 @@ import {
   subscribeJournal, getJournalSnapshot, getServerJournalSnapshot, setJournalData,
   subscribeSyncState, getSyncState, getServerSyncState, getSyncDetail, initJournalSync,
   emptyTask, uid, isDone,
-  replaceTaskInTree, removeTaskFromTree, flattenTasks, countSubtasks,
+  replaceTaskInTree, removeTaskFromTree, findTaskInTree, flattenTasks, countSubtasks,
   toDateKey, formatDateHe,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS,
   HE_MONTHS, HE_WEEKDAYS, HE_WEEKDAYS_FULL, CATEGORY_COLOR_CHOICES,
@@ -319,7 +319,10 @@ export default function TaskJournal() {
       ? `למחוק את הקטגוריה "${cat?.name ?? ""}"? ${assigned} משימות ישוחררו ממנה (המשימות עצמן יישארו).`
       : `למחוק את הקטגוריה "${cat?.name ?? ""}"?`;
     if (!confirm(msg)) return;
-    const prev = journal;
+    // ביטול מדויק: משחזר את הקטגוריה, השיוכים ותתי-הקטגוריות בלי לדרוס עריכות ביניים
+    const removedCat = journal.categories.find((c) => c.id === id);
+    const affectedIds = new Set(flattenTasks(journal.tasks).filter((t) => t.categoryId === id).map((t) => t.id));
+    const childIds = new Set(journal.categories.filter((c) => c.parentId === id).map((c) => c.id));
     const clearCat = (list: Task[]): Task[] =>
       list.map((t) => ({
         ...t,
@@ -334,7 +337,25 @@ export default function TaskJournal() {
       tasks: clearCat(journal.tasks),
     });
     setCatFilter((p) => { const n = new Set(p); n.delete(id); return n; });
-    toast("הקטגוריה נמחקה", "info", { label: "ביטול", onClick: () => persist(prev) });
+    toast("הקטגוריה נמחקה", "info", {
+      label: "ביטול",
+      onClick: () => {
+        const s = getJournalSnapshot();
+        if (!s || !removedCat) return;
+        const restoreCat = (list: Task[]): Task[] =>
+          list.map((t) => ({
+            ...t,
+            categoryId: !t.categoryId && affectedIds.has(t.id) ? id : t.categoryId,
+            subtasks: restoreCat(t.subtasks),
+          }));
+        persist({
+          ...s,
+          categories: (s.categories.some((c) => c.id === id) ? s.categories : [...s.categories, removedCat])
+            .map((c) => (childIds.has(c.id) && !c.parentId ? { ...c, parentId: id } : c)),
+          tasks: restoreCat(s.tasks),
+        });
+      },
+    });
   }
 
   function createTask() {
@@ -352,10 +373,21 @@ export default function TaskJournal() {
 
   function deleteTask(id: string) {
     if (!journal) return;
-    const prev = journal;
+    // ביטול מדויק: מחזיר רק את המשימה שנמחקה למקומה, בלי לדרוס עריכות שנעשו בינתיים
+    const idx = journal.tasks.findIndex((t) => t.id === id);
+    const removed = idx >= 0 ? journal.tasks[idx] : null;
     persist({ ...journal, tasks: removeTaskFromTree(journal.tasks, id) });
     setOpenTaskId(null);
-    toast("המשימה נמחקה", "info", { label: "ביטול", onClick: () => persist(prev) });
+    toast("המשימה נמחקה", "info", {
+      label: "ביטול",
+      onClick: () => {
+        const s = getJournalSnapshot();
+        if (!s || !removed || findTaskInTree(s.tasks, removed.id)) return;
+        const tasks = [...s.tasks];
+        tasks.splice(Math.min(idx, tasks.length), 0, removed);
+        persist({ ...s, tasks });
+      },
+    });
   }
 
   function setTaskStatus(t: Task, status: TaskStatus) {

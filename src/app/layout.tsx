@@ -26,10 +26,15 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl">
       <body>
-        {/* קובע את ערכת הנושא לפני הציור הראשון — מונע הבזק לבן במצב כהה */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        {/* קובע את ערכת הנושא לפני הציור הראשון (מונע הבזק לבן במצב כהה),
+            וטוען את הפונטים בלי לחסום את הציור — פונט מערכת מוצג עד שהם מגיעים */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("ofir-theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.dataset.theme="dark"}catch(e){}`,
+            __html:
+              `try{var t=localStorage.getItem("ofir-theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.dataset.theme="dark"}catch(e){}` +
+              `var f=document.createElement("link");f.rel="stylesheet";f.href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";document.head.appendChild(f);`,
           }}
         />
         <ToastProvider>{children}</ToastProvider>

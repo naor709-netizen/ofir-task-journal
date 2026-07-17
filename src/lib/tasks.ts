@@ -201,6 +201,23 @@ function notify() {
   listeners.forEach((l) => l());
 }
 
+// סנכרון בין טאבים באותו דפדפן — בלי זה, במצב מקומי כל טאב חי בעולם משלו
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== STORAGE_KEY || e.newValue === null) return;
+    try {
+      const parsed = JSON.parse(e.newValue) as JournalData;
+      snapshot = {
+        categories: (parsed.categories ?? DEFAULT_CATEGORIES).map((c) => ({ parentId: null, ...c })),
+        tasks: (parsed.tasks ?? []).map(normalizeTask),
+      };
+      notify();
+    } catch {
+      /* ערך פגום — מתעלמים */
+    }
+  });
+}
+
 // --- sync state (shown in the header) ---
 
 export type SyncState = "local" | "syncing" | "synced" | "error";

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* הפונטים נטענים א-סינכרונית מ-layout.tsx — @import כאן חסם את ציור הדף עד שגוגל עונה */
 
 :root {
   --font: 'Heebo', system-ui, sans-serif;

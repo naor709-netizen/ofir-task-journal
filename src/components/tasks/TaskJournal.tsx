@@ -244,7 +244,11 @@ export default function TaskJournal() {
   }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate, catById]);
 
   const criticalTasks = filteredTasks.filter((t) => t.critical && !isDone(t));
-  const regularTasks = filteredTasks.filter((t) => !(t.critical && !isDone(t)));
+  // משימות שהושלמו לא נשארות ברשימה הראשית — הן עוברות לרשימה מרוכזת מתחת ללוח השנה
+  const regularTasks = filteredTasks.filter((t) => !isDone(t) && !t.critical);
+  const doneTasks = [...filteredTasks.filter(isDone)]
+    .sort((a, b) => (b.endDate ?? "").localeCompare(a.endDate ?? ""));
+  const activeCount = filteredTasks.length - doneTasks.length;
 
   const allFlat = useMemo(() => flattenTasks(journal?.tasks ?? []), [journal]);
   const todayKey = toDateKey(today);
@@ -888,12 +892,18 @@ export default function TaskJournal() {
                   <span style={{ color: T.accent }}>{Ic.layers(16)}</span>
                   <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>המשימות שלי</h2>
                   <span className="num" style={{ fontSize: 11.5, color: T.ink2, background: T.surface2, borderRadius: 99, padding: "2px 9px" }}>
-                    {filteredTasks.length}
+                    {activeCount}
                   </span>
                 </div>
 
-                {filteredTasks.length === 0 ? (
-                  <Empty filtersActive={filtersActive} onCreate={createTask} />
+                {activeCount === 0 ? (
+                  doneTasks.length > 0 ? (
+                    <div style={{ textAlign: "center", padding: "34px 20px", color: T.mint, fontSize: 14, fontWeight: 600 }}>
+                      🎉 כל המשימות הושלמו — כל הכבוד!
+                    </div>
+                  ) : (
+                    <Empty filtersActive={filtersActive} onCreate={createTask} />
+                  )
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     {regularTasks.map((t) => (
@@ -939,6 +949,30 @@ export default function TaskJournal() {
                     <button onClick={() => setSelectedDate(null)} style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", fontSize: 11.5, textDecoration: "underline", fontFamily: "inherit" }}>
                       הצגת הכל
                     </button>
+                  </div>
+                )}
+              </section>
+
+              {/* המשימות שהושלמו — רשימה מרוכזת מתחת ללוח השנה (בקשה של אופיר) */}
+              <section className="tj-card" style={{ ...card, padding: 16, marginTop: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: doneTasks.length > 0 ? 12 : 0 }}>
+                  <span style={{ color: T.mint }}>{Ic.checkCircle(16)}</span>
+                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>הושלמו</h2>
+                  <span className="num" style={{ fontSize: 11.5, color: T.mint, background: T.mintSoft, borderRadius: 99, padding: "2px 9px" }}>
+                    {doneTasks.length}
+                  </span>
+                </div>
+                {doneTasks.length === 0 ? (
+                  <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
+                    משימות שתסמנו כ&quot;הושלמו&quot; יעברו לכאן.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 380, overflowY: "auto" }}>
+                    {doneTasks.map((t) => (
+                      <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
+                        todayKey={todayKey} compact
+                        onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
+                    ))}
                   </div>
                 )}
               </section>

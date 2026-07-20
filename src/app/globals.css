@@ -57,7 +57,11 @@ html { direction: rtl; }
 
 body {
   margin: 0;
-  background: var(--tj-bg);
+  background:
+    radial-gradient(1100px 560px at 100% -8%, var(--tj-accent-soft), transparent 58%),
+    radial-gradient(950px 520px at -6% 104%, var(--tj-accent-soft), transparent 55%),
+    var(--tj-bg);
+  background-attachment: fixed;
   color: var(--tj-ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;

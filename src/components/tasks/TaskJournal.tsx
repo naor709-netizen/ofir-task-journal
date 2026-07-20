@@ -16,7 +16,7 @@ import {
 import { pushPermission, isSubscribed, enablePush, diagnosePush, showLocalNotification, sendTestPush } from "@/lib/push";
 import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
-import { T, alpha, card, chip, inputStyle, Ic, StatusIcon } from "./ui";
+import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 
@@ -468,19 +468,19 @@ export default function TaskJournal() {
       }}>
         <nav className="no-scrollbar" style={{
           display: "flex", gap: 2, background: T.surface, border: `1px solid ${T.line}`,
-          borderRadius: 12, padding: 3, overflowX: "auto", maxWidth: "100%",
+          borderRadius: 12, padding: 3, overflowX: "auto", maxWidth: "100%", boxShadow: T.shadowSm,
         }}>
           {VIEWS.map((v) => {
             const active = view === v.key;
             return (
               <button key={v.key} onClick={() => setView(v.key)} style={{
                 display: "inline-flex", alignItems: "center", gap: 7,
-                background: active ? T.surface2 : "transparent",
+                background: active ? "linear-gradient(135deg, rgba(37,99,235,0.14), rgba(15,164,126,0.12))" : "transparent",
                 color: active ? T.ink : T.ink2,
                 border: "none", borderRadius: 9, padding: "8px 14px",
-                fontSize: 13, fontWeight: active ? 600 : 400, cursor: "pointer",
+                fontSize: 13, fontWeight: active ? 700 : 400, cursor: "pointer",
                 whiteSpace: "nowrap", fontFamily: "inherit",
-                boxShadow: active ? `inset 0 0 0 1px ${T.lineStrong}` : "none",
+                boxShadow: active ? `inset 0 0 0 1px ${T.accent}3A` : "none",
               }}>
                 <span style={{ color: active ? T.accent : T.ink3, display: "inline-flex" }}>{v.icon(15)}</span>
                 {v.label}
@@ -866,11 +866,14 @@ export default function TaskJournal() {
 
               {/* critical strip */}
               {criticalTasks.length > 0 && (
-                <section className="tj-card" style={{ ...card, padding: 16, borderColor: `${alpha(T.danger, 27)}` }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <span style={{ color: T.danger }}>{Ic.flame(16)}</span>
-                    <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>משימות קריטיות</h2>
-                    <span className="num" style={{ fontSize: 11.5, color: T.danger, background: T.dangerSoft, borderRadius: 99, padding: "2px 9px" }}>
+                <section className="tj-card" style={{
+                  ...tintCard(T.danger), padding: 16, position: "relative", overflow: "hidden",
+                }}>
+                  <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: `linear-gradient(90deg, ${T.danger}, ${T.danger}66)` }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
+                    <IcChip icon={Ic.flame(16)} color={T.danger} />
+                    <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>משימות קריטיות</h2>
+                    <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", background: T.danger, borderRadius: 99, padding: "2px 10px" }}>
                       {criticalTasks.length}
                     </span>
                   </div>
@@ -887,11 +890,12 @@ export default function TaskJournal() {
               {/* tasks (main, right) + calendar (left column) side by side */}
               <div className="tj-dash-cols" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-              <section className="tj-card" style={{ ...card, padding: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <span style={{ color: T.accent }}>{Ic.layers(16)}</span>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>המשימות שלי</h2>
-                  <span className="num" style={{ fontSize: 11.5, color: T.ink2, background: T.surface2, borderRadius: 99, padding: "2px 9px" }}>
+              <section className="tj-card" style={{ ...card, padding: 16, position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: T.grad }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
+                  <IcChip icon={Ic.layers(16)} color={T.accent} />
+                  <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>המשימות שלי</h2>
+                  <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: T.accent, background: T.accentSoft, borderRadius: 99, padding: "2px 10px" }}>
                     {activeCount}
                   </span>
                 </div>
@@ -916,10 +920,11 @@ export default function TaskJournal() {
               </section>
                 </div>
                 <div className="tj-dash-cal" style={{ width: 452, flexShrink: 0, position: "sticky", top: 14 }}>
-              <section className="tj-card" style={{ ...card, padding: 16 }}>
+              <section className="tj-card" style={{ ...card, padding: 16, position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: T.grad }} />
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-                  <span style={{ color: T.accent }}>{Ic.calendar(16)}</span>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>לוח שנה</h2>
+                  <IcChip icon={Ic.calendar(16)} color={T.accent} />
+                  <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>לוח שנה</h2>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, marginInlineStart: "auto" }}>
                     <NavBtn onClick={() => { const m = calMonth - 1; if (m < 0) { setCalMonth(11); setCalYear(calYear - 1); } else setCalMonth(m); }}>{Ic.chevR(14)}</NavBtn>
                     <div className="num" style={{ minWidth: 118, textAlign: "center", fontWeight: 600, fontSize: 13.5 }}>
@@ -1027,7 +1032,9 @@ export default function TaskJournal() {
         ::selection { background: rgba(61,126,255,0.4); }
         .tj-catdel { opacity: 0; transition: opacity .15s; }
         .tj-catrow:hover .tj-catdel { opacity: 0.7; }
+        .tj-card { transition: box-shadow .18s, transform .18s, border-color .18s; }
         input::placeholder, textarea::placeholder { color: #5E7089; }
+        @media (max-width: 520px) { .tj-synctext { display: none; } }
         @media (max-width: 1180px) {
           .tj-dash-cols { flex-direction: column !important; }
           .tj-dash-cal { width: 100% !important; position: static !important; }
@@ -1067,10 +1074,18 @@ function filteredCountByCat(tasks: Task[], catId: string): number {
 function Header({ sync }: { sync: { icon: React.ReactNode; label: string; color: string } }) {
   return (
     <header style={{
-      background: T.bg2, borderBottom: `1px solid ${T.line}`,
-      padding: "10px 18px", display: "flex", alignItems: "center", gap: 12,
+      position: "relative",
+      background: "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(247,250,253,0.82))",
+      backdropFilter: "saturate(1.4) blur(8px)",
+      borderBottom: `1px solid ${T.line}`,
+      padding: "11px 18px", display: "flex", alignItems: "center", gap: 12,
+      boxShadow: "0 1px 0 rgba(255,255,255,0.7) inset, 0 6px 18px -14px rgba(23,43,77,0.5)",
     }}>
-      <div style={{ background: "#fff", borderRadius: 10, padding: "4px 7px", display: "flex", alignItems: "center" }}>
+      <div style={{ position: "absolute", insetInline: 0, bottom: 0, height: 3, background: T.grad, opacity: 0.9 }} />
+      <div style={{
+        background: "#fff", borderRadius: 12, padding: "5px 8px", display: "flex", alignItems: "center",
+        border: `1px solid ${T.line}`, boxShadow: T.shadowSm,
+      }}>
         <Image src="/logo-histadrut.svg" alt="ההסתדרות" width={40} height={34}
           style={{ height: 32, width: "auto" }} />
       </div>
@@ -1082,17 +1097,25 @@ function Header({ sync }: { sync: { icon: React.ReactNode; label: string; color:
           הבית של העובדים בישראל
         </div>
       </div>
-      <div style={{ width: 1, height: 26, background: T.line, marginInline: 4 }} />
+      <div style={{ width: 1, height: 30, background: `linear-gradient(${T.line}, transparent)`, marginInline: 6 }} />
       <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{
+          fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15.5,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          background: T.grad, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+        }}>
           יומן המשימות של אופיר
         </div>
-        <div className="num" style={{ fontSize: 10, color: T.ink3, letterSpacing: "0.08em" }}>
+        <div className="num" style={{ fontSize: 10, color: T.ink3, letterSpacing: "0.14em" }}>
           TASK JOURNAL
         </div>
       </div>
-      <span style={{ marginInlineStart: "auto", color: sync.color, display: "inline-flex" }} title={sync.label}>
-        {sync.icon}
+      <span style={{
+        marginInlineStart: "auto", color: sync.color, display: "inline-flex", alignItems: "center", gap: 6,
+        background: T.surface, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 11px",
+        fontSize: 11, fontWeight: 600, boxShadow: T.shadowSm,
+      }} title={sync.label}>
+        {sync.icon}<span className="tj-synctext">{sync.label}</span>
       </span>
     </header>
   );
@@ -1101,9 +1124,25 @@ function Header({ sync }: { sync: { icon: React.ReactNode; label: string; color:
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      fontSize: 10.5, fontWeight: 600, color: T.ink3, marginBottom: 8,
+      display: "flex", alignItems: "center", gap: 7,
+      fontSize: 10.5, fontWeight: 700, color: T.ink3, marginBottom: 9,
       letterSpacing: "0.06em", textTransform: "uppercase",
-    }}>{children}</div>
+    }}>
+      <span style={{ width: 3, height: 12, borderRadius: 99, background: T.grad }} />
+      {children}
+    </div>
+  );
+}
+
+// אייקון בתוך צ'יפ צבעוני מדורג — נותן משקל ויזואלי לכותרות מקטעים
+function IcChip({ icon, color, size = 30 }: { icon: React.ReactNode; color: string; size?: number }) {
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: 9, flexShrink: 0,
+      background: `linear-gradient(135deg, ${color}, ${color}C4)`, color: "#fff",
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      boxShadow: `0 5px 14px -6px ${color}AA`,
+    }}>{icon}</span>
   );
 }
 
@@ -1119,14 +1158,20 @@ function NavBtn({ children, onClick }: { children: React.ReactNode; onClick: () 
 
 function Kpi({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color: string }) {
   return (
-    <div style={{ ...card, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+    <div style={{
+      ...tintCard(color), padding: "13px 15px", display: "flex", alignItems: "center", gap: 12,
+      position: "relative", overflow: "hidden",
+    }}>
+      <span style={{ position: "absolute", insetInlineStart: 0, top: 0, bottom: 0, width: 3.5, background: color, opacity: 0.85 }} />
       <span style={{
-        width: 34, height: 34, borderRadius: 10, background: `${color}1A`, color,
-        display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        width: 38, height: 38, borderRadius: 11, color: "#fff", flexShrink: 0,
+        background: `linear-gradient(135deg, ${color}, ${color}C4)`,
+        boxShadow: `0 6px 16px -6px ${color}99`,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
       }}>{icon}</span>
       <div style={{ minWidth: 0 }}>
-        <div className="num" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{value}</div>
-        <div style={{ fontSize: 11, color: T.ink3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+        <div className="num" style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.05, color: T.ink }}>{value}</div>
+        <div style={{ fontSize: 11, color: T.ink2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
       </div>
     </div>
   );

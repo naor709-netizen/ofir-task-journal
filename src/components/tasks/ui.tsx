@@ -19,10 +19,14 @@ export const T = {
   accentSoft: "var(--tj-accent-soft)",
   mint: "var(--tj-mint)",
   mintSoft: "var(--tj-mint-soft)",
-  grad: "linear-gradient(120deg,#2563EB 0%,#0FA47E 100%)",
+  // גרדיאנט מותג במשפחת צבע אחת (כחול→אינדיגו) — צבע מותג יחיד, לא קשת
+  grad: "linear-gradient(135deg,#2563EB 0%,#4F46E5 100%)",
   danger: "var(--tj-danger)",
   dangerSoft: "var(--tj-danger-soft)",
   amber: "var(--tj-amber)",
+  shadowSm: "0 1px 2px var(--tj-shadow)",
+  shadowMd: "0 1px 2px var(--tj-shadow), 0 10px 28px -14px var(--tj-shadow)",
+  shadowLg: "0 24px 70px var(--tj-shadow)",
   r: 14,
 };
 
@@ -35,8 +39,17 @@ export const card: React.CSSProperties = {
   background: T.surface,
   border: `1px solid ${T.line}`,
   borderRadius: 16,
-  boxShadow: "0 1px 3px var(--tj-shadow)",
+  boxShadow: T.shadowMd,
 };
+
+// כרטיס מדד עם גוון צבע עדין ומסגרת תואמת — שומר על תמיכה בבהיר/כהה
+export function tintCard(color: string): React.CSSProperties {
+  return {
+    ...card,
+    background: `linear-gradient(180deg, ${alpha(color, 12)} 0%, ${alpha(color, 5)} 30%, ${T.surface} 72%)`,
+    border: `1px solid ${alpha(color, 26)}`,
+  };
+}
 
 export function chip(color: string, active: boolean): React.CSSProperties {
   return {

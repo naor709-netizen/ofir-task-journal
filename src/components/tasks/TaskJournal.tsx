@@ -852,6 +852,13 @@ export default function TaskJournal() {
                   return (
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{
+                          display: "inline-block", fontSize: 9.5, fontWeight: 600, letterSpacing: "0.18em",
+                          color: T.accent, background: T.accentSoft, borderRadius: 99,
+                          padding: "3px 11px", marginBottom: 8,
+                        }}>
+                          סקירה יומית
+                        </span>
                         <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.025em", lineHeight: 1.1, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <span>{emoji} {greet}, אופיר</span>
                           {streak >= 2 && (
@@ -906,8 +913,36 @@ export default function TaskJournal() {
               </section>
 
               {/* KPI strip */}
-              <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-                <Kpi label="משימות פתוחות" value={openCount} icon={Ic.circle(15)} />
+              <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 1fr 1fr", gap: 10 }}>
+                {(() => {
+                  const doneAll = allFlat.filter(isDone).length;
+                  const totalAll = allFlat.length;
+                  const pct = totalAll ? Math.round((doneAll / totalAll) * 100) : 0;
+                  return (
+                    <div className="tj-kpi-hero" style={{ ...card, padding: "14px 16px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{
+                          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+                          background: T.accentSoft, color: T.accent,
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        }}>{Ic.circle(16)}</span>
+                        <div>
+                          <div className="num tj-kpi-num" style={{ fontSize: 30, fontWeight: 800, lineHeight: 1, color: T.ink }}>{openCount}</div>
+                          <div style={{ fontSize: 11, color: T.ink2, fontWeight: 500 }}>משימות פתוחות</div>
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: T.ink3, marginBottom: 4 }}>
+                          <span>התקדמות כוללת</span>
+                          <span className="num" style={{ color: T.mint, fontWeight: 700 }}>{pct}%</span>
+                        </div>
+                        <div style={{ height: 5, borderRadius: 99, background: T.surface2, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${pct}%`, borderRadius: 99, background: T.mint, transition: "width .8s cubic-bezier(0.32,0.72,0,1)" }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <Kpi label="בתהליך" value={inProgressCount} icon={Ic.progress(15)} />
                 <Kpi label="קריטיות" value={criticalCount} icon={Ic.flame(15)} alert={criticalCount > 0} />
                 <Kpi label="באיחור" value={overdueCount} icon={Ic.alert(15)} alert={overdueCount > 0} />
@@ -1108,6 +1143,7 @@ export default function TaskJournal() {
           .tj-layout { padding: 10px 10px 40px !important; gap: 10px !important; }
           .tj-card { padding: 12px !important; }
           .tj-kpis { grid-template-columns: repeat(2,1fr) !important; }
+          .tj-kpi-hero { grid-column: 1 / -1; }
           .tj-newbtn { flex: 1; justify-content: center; }
           .tj-calday { min-height: 52px !important; padding: 3px 3px !important; }
           .tj-calday button { font-size: 8.5px !important; padding: 1px 3px !important; }
@@ -1265,11 +1301,11 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
       onClick={onOpen}
       style={{
         display: "flex", alignItems: "center", gap: 11, cursor: "pointer",
-        background: T.bg2, border: `1px solid ${T.line}`,
+        background: T.bg2, border: "1px solid transparent",
         borderInlineStart: `3px solid ${accent}`,
-        borderRadius: 12, padding: compact ? "9px 12px" : "11px 13px",
+        borderRadius: 13, padding: compact ? "9px 12px" : "11px 13px",
         opacity: done ? 0.55 : 1,
-        transition: "border-color .15s, background .15s",
+        transition: "border-color .35s cubic-bezier(0.32,0.72,0,1), background .35s cubic-bezier(0.32,0.72,0,1)",
       }}
       onMouseEnter={(e) => { e.currentTarget.style.background = T.surface2; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = T.bg2; }}
@@ -1392,7 +1428,7 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
               style={{
                 minHeight: 72, borderRadius: 10, padding: "4px 5px", cursor: "pointer",
                 background: isSelected ? T.mintSoft : T.bg2,
-                border: `1px solid ${isSelected ? `${alpha(T.mint, 40)}` : isToday ? T.accent : T.line}`,
+                border: `1px solid ${isSelected ? `${alpha(T.mint, 40)}` : isToday ? T.accent : "transparent"}`,
                 display: "flex", flexDirection: "column", gap: 3, overflow: "hidden",
               }}
             >

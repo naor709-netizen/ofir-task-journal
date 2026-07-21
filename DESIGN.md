@@ -57,11 +57,23 @@
 - מודל: pop 0.32s + fade רקע
 - חוקים: רק transform/opacity/filter; `clearProps: "opacity,transform"` בלבד (לעולם לא "all")
 
-## 7. עומק וטקסטורה
+## 7. עומק וטקסטורה (ארכיטיפ: Soft Structuralism)
 
 רקע: `--tj-bg` + שתי הילות רדיאליות ב-`--tj-accent-soft` (fixed).
 גרעון: `body::after` — SVG fractalNoise, opacity 0.026 (כהה: 0.05), pointer-events none.
-צל: תמיד מגוון כחול-נייבי, דו-שכבתי בכרטיסים. כיוון אור אחיד מלמעלה.
+
+**מתכון החומר (Double-Bezel)** — כל `card`:
+`inset 0 1px 0 var(--tj-bezel)` (הדגשת-אור עליונה) + `0 1px 2px var(--tj-shadow)` (מגע)
++ `0 24px 48px -28px var(--tj-shadow-strong)` (צל אמביינטי רך). רדיוס 18.
+ריחוף: הצל מתעמק (`0 32px 64px -28px`) — לעולם לא transform (מתנגש ב-GSAP).
+
+**סרגל פקודות צף (Fluid Island)** — ה-toolbar דביק (top 8), מנותק מהקצוות,
+`--tj-glass` + blur(16px) (blur רק על אלמנטים דביקים), רדיוס 20, קו-שיער + bezel.
+
+**כפתור ראשי** — pill (99) עם אייקון מקונן בעיגול משלו (rgba לבן 18%);
+זוהר מותג `0 10px 24px -10px`; ה-orb מסתובב 90° בריחוף.
+
+כיוון אור אחיד מלמעלה. מעברים: `cubic-bezier(0.32,0.72,0,1)` — אסור linear/ease-in-out.
 
 ## 8. נגישות וחוב מקובל
 

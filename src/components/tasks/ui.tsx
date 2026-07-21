@@ -35,11 +35,12 @@ export function alpha(color: string, pct: number): string {
   return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 }
 
+// Double-Bezel: קו-שיער חיצוני + הדגשת-אור פנימית עליונה + צל אמביינטי רך ומפוזר
 export const card: React.CSSProperties = {
   background: T.surface,
   border: `1px solid ${T.line}`,
-  borderRadius: 16,
-  boxShadow: T.shadowMd,
+  borderRadius: 18,
+  boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 1px 2px var(--tj-shadow), 0 24px 48px -28px var(--tj-shadow-strong)",
 };
 
 // כרטיס מדד עם גוון צבע עדין ומסגרת תואמת — שומר על תמיכה בבהיר/כהה

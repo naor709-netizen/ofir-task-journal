@@ -502,8 +502,13 @@ export default function TaskJournal() {
 
       {/* ===== toolbar: view tabs + new task ===== */}
       <div className="tj-toolbar" style={{
-        maxWidth: 1280, margin: "0 auto", padding: "14px 18px 0",
+        maxWidth: 1252, margin: "12px auto 0", padding: "8px 10px",
         display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        position: "sticky", top: 8, zIndex: 40,
+        background: "var(--tj-glass)",
+        backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+        border: `1px solid ${T.line}`, borderRadius: 20,
+        boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 12px 32px -16px var(--tj-shadow-strong)",
       }}>
         <nav className="no-scrollbar" style={{
           display: "flex", gap: 2, background: T.surface, border: `1px solid ${T.line}`,
@@ -568,12 +573,17 @@ export default function TaskJournal() {
             {Ic.bell(13)} {testingPush ? "בודק…" : pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : pushState === "unsupported" ? "התראות — נדרשת התקנה" : "הפעל התראות"}
           </button>
           <button onClick={createTask} className="tj-newbtn" style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            background: T.grad, color: "#fff", border: "none", borderRadius: 11,
-            padding: "10px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+            display: "inline-flex", alignItems: "center", gap: 9,
+            background: T.grad, color: "#fff", border: "none", borderRadius: 99,
+            padding: "7px 8px 7px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
             fontFamily: "var(--font-display)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 10px 24px -10px rgba(29,79,215,0.65)",
           }}>
-            {Ic.plus(15)} משימה חדשה
+            <span className="tj-newbtn-orb" style={{
+              width: 26, height: 26, borderRadius: 99, background: "rgba(255,255,255,0.18)",
+              display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>{Ic.plus(14)}</span>
+            משימה חדשה
           </button>
         </div>
       </div>
@@ -1069,6 +1079,9 @@ export default function TaskJournal() {
 
       <style>{`
         ::selection { background: rgba(61,126,255,0.4); }
+        @media (max-width: 1290px) { .tj-toolbar { margin-inline: 12px !important; } }
+        .tj-newbtn:hover .tj-newbtn-orb { transform: rotate(90deg) scale(1.08); }
+        .tj-newbtn-orb { transition: transform .45s cubic-bezier(0.32,0.72,0,1); }
         .tj-catdel { opacity: 0; transition: opacity .15s; }
         .tj-catrow:hover .tj-catdel { opacity: 0.7; }
         .tj-card { transition: box-shadow .18s, transform .18s, border-color .18s; }
@@ -1091,7 +1104,7 @@ export default function TaskJournal() {
         @media (max-width: 640px) {
           /* פונט מתחת ל-16px גורם לזום אוטומטי של iOS בפוקוס על שדה */
           input, textarea, select { font-size: 16px !important; }
-          .tj-toolbar { padding: 10px 10px 0 !important; }
+          .tj-toolbar { padding: 7px 8px !important; margin: 8px 8px 0 !important; top: 6px !important; }
           .tj-layout { padding: 10px 10px 40px !important; gap: 10px !important; }
           .tj-card { padding: 12px !important; }
           .tj-kpis { grid-template-columns: repeat(2,1fr) !important; }

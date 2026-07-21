@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import { useToast } from "@/components/Toast";
 import {
   type Task, type TaskCategory, type TaskFile, type TaskNature, type TaskStatus,
@@ -160,8 +162,18 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
 
   const breadcrumbTasks = path.map((_, i) => taskAtPath(draft, path.slice(0, i + 1)));
 
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useGSAP(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.from(overlayRef.current, { opacity: 0, duration: 0.22, ease: "power1.out" });
+    gsap.from(".modal-mobile-full", {
+      opacity: 0, y: 18, scale: 0.965, duration: 0.32, ease: "power3.out", clearProps: "opacity,transform",
+    });
+  }, { scope: overlayRef });
+
   return (
     <div
+      ref={overlayRef}
       onClick={requestClose}
       style={{
         position: "fixed", inset: 0, zIndex: 100, background: "rgba(4,9,18,0.72)",

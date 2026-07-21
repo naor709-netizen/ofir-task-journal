@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import { useToast } from "@/components/Toast";
 import {
   type JournalData, type Task, type TaskCategory, type TaskNature, type TaskStatus,
@@ -19,6 +21,8 @@ import { celebrate } from "@/lib/celebrate";
 import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
+
+gsap.registerPlugin(useGSAP);
 
 type ViewKey = "dashboard" | "week" | "table" | "board" | "stats";
 
@@ -438,6 +442,41 @@ export default function TaskJournal() {
 
   const filtersActive = catFilter.size > 0 || natureFilter.size > 0 || statusFilter !== "all" || criticalOnly || !!search.trim() || !!selectedDate;
 
+  // ---- GSAP choreography ----
+  const rootRef = useRef<HTMLDivElement>(null);
+  const entranceDone = useRef(false);
+  const viewFirst = useRef(true);
+
+  useGSAP(() => {
+    if (!journal || entranceDone.current) return;
+    entranceDone.current = true;
+    const mm = gsap.matchMedia();
+    mm.add("(prefers-reduced-motion: no-preference)", () => {
+      const tl = gsap.timeline({ defaults: { ease: "power3.out", duration: 0.55 } });
+      tl.from("header", { y: -16, opacity: 0, duration: 0.4, clearProps: "opacity,transform" })
+        .from(".tj-toolbar", { y: 12, opacity: 0, duration: 0.4, clearProps: "opacity,transform" }, "-=0.22")
+        .from(".tj-kpis > div", { y: 20, opacity: 0, stagger: 0.06, clearProps: "opacity,transform" }, "-=0.2")
+        .from(".tj-layout .tj-card", { y: 24, opacity: 0, stagger: 0.07, clearProps: "opacity,transform" }, "-=0.38");
+      gsap.utils.toArray<HTMLElement>(".tj-kpi-num").forEach((el) => {
+        const end = parseInt(el.textContent || "0", 10) || 0;
+        if (end > 0) {
+          gsap.fromTo(el, { textContent: 0 },
+            { textContent: end, duration: 0.9, delay: 0.3, ease: "power2.out", snap: { textContent: 1 } });
+        }
+      });
+    });
+  }, { scope: rootRef, dependencies: [!!journal] });
+
+  useGSAP(() => {
+    if (!journal) return;
+    if (viewFirst.current) { viewFirst.current = false; return; }
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
+    gsap.fromTo(".tj-main",
+      { opacity: 0, y: 10 },
+      { opacity: 1, y: 0, duration: 0.32, ease: "power2.out", clearProps: "opacity,transform" });
+  }, { scope: rootRef, dependencies: [view] });
+
   const sync = {
     local:   { icon: Ic.cloudOff(13), label: "מקומי בלבד", color: T.ink3 },
     syncing: { icon: Ic.cloud(13),    label: "מסנכרן…",    color: T.amber },
@@ -458,7 +497,7 @@ export default function TaskJournal() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.ink }}>
+    <div ref={rootRef} style={{ minHeight: "100vh", color: T.ink }}>
       <Header sync={sync} />
 
       {/* ===== toolbar: view tabs + new task ===== */}
@@ -773,7 +812,7 @@ export default function TaskJournal() {
         </aside>
 
         {/* ---- main ---- */}
-        <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+        <main className="tj-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
 
           <button className="tj-sidebar-toggle" onClick={() => setSidebarOpen((o) => {
             if (!o) window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1170,7 +1209,7 @@ function Kpi({ label, value, icon, color }: { label: string; value: number; icon
         display: "inline-flex", alignItems: "center", justifyContent: "center",
       }}>{icon}</span>
       <div style={{ minWidth: 0 }}>
-        <div className="num" style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.05, color: T.ink }}>{value}</div>
+        <div className="num tj-kpi-num" style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.05, color: T.ink }}>{value}</div>
         <div style={{ fontSize: 11, color: T.ink2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
       </div>
     </div>

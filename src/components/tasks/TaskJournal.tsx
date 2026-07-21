@@ -842,7 +842,7 @@ export default function TaskJournal() {
                   return (
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.025em", lineHeight: 1.1, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <span>{emoji} {greet}, אופיר</span>
                           {streak >= 2 && (
                             <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
@@ -897,10 +897,10 @@ export default function TaskJournal() {
 
               {/* KPI strip */}
               <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-                <Kpi label="משימות פתוחות" value={openCount} icon={Ic.circle(15)} color={T.accent} />
-                <Kpi label="בתהליך" value={inProgressCount} icon={Ic.progress(15)} color={T.amber} />
-                <Kpi label="קריטיות" value={criticalCount} icon={Ic.flame(15)} color={T.danger} />
-                <Kpi label="באיחור" value={overdueCount} icon={Ic.alert(15)} color={overdueCount > 0 ? T.danger : T.ink3} />
+                <Kpi label="משימות פתוחות" value={openCount} icon={Ic.circle(15)} />
+                <Kpi label="בתהליך" value={inProgressCount} icon={Ic.progress(15)} />
+                <Kpi label="קריטיות" value={criticalCount} icon={Ic.flame(15)} alert={criticalCount > 0} />
+                <Kpi label="באיחור" value={overdueCount} icon={Ic.alert(15)} alert={overdueCount > 0} />
               </div>
 
               {/* critical strip */}
@@ -1195,21 +1195,18 @@ function NavBtn({ children, onClick }: { children: React.ReactNode; onClick: () 
   );
 }
 
-function Kpi({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color: string }) {
+// KPI אחיד: לבן + כחול המותג; אדום מופיע רק כשיש באמת בעיה (alert)
+function Kpi({ label, value, icon, alert }: { label: string; value: number; icon: React.ReactNode; alert?: boolean }) {
+  const c = alert ? T.danger : T.accent;
   return (
-    <div style={{
-      ...tintCard(color), padding: "13px 15px", display: "flex", alignItems: "center", gap: 12,
-      position: "relative", overflow: "hidden",
-    }}>
-      <span style={{ position: "absolute", insetInlineStart: 0, top: 0, bottom: 0, width: 3.5, background: color, opacity: 0.85 }} />
+    <div style={{ ...card, padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
       <span style={{
-        width: 38, height: 38, borderRadius: 11, color: "#fff", flexShrink: 0,
-        background: `linear-gradient(135deg, ${color}, ${color}C4)`,
-        boxShadow: `0 6px 16px -6px ${color}99`,
+        width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+        background: alert ? T.dangerSoft : T.accentSoft, color: c,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
       }}>{icon}</span>
       <div style={{ minWidth: 0 }}>
-        <div className="num tj-kpi-num" style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.05, color: T.ink }}>{value}</div>
+        <div className="num tj-kpi-num" style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.05, color: alert ? T.danger : T.ink }}>{value}</div>
         <div style={{ fontSize: 11, color: T.ink2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
       </div>
     </div>

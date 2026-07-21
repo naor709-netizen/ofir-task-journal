@@ -19,8 +19,8 @@ export const T = {
   accentSoft: "var(--tj-accent-soft)",
   mint: "var(--tj-mint)",
   mintSoft: "var(--tj-mint-soft)",
-  // גרדיאנט מותג במשפחת צבע אחת (כחול→אינדיגו) — צבע מותג יחיד, לא קשת
-  grad: "linear-gradient(135deg,#2563EB 0%,#4F46E5 100%)",
+  // רמפה חד-גונית של כחול המותג — לא "גרדיאנט AI" כחול-סגול
+  grad: "linear-gradient(135deg,#3B82F6 0%,#1D4FD7 100%)",
   danger: "var(--tj-danger)",
   dangerSoft: "var(--tj-danger-soft)",
   amber: "var(--tj-amber)",

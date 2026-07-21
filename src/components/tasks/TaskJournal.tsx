@@ -1195,7 +1195,7 @@ function Header({ sync }: { sync: { icon: React.ReactNode; label: string; color:
           יומן המשימות של אופיר
         </div>
         <div className="num" style={{ fontSize: 10, color: T.ink3, letterSpacing: "0.14em" }}>
-          TASK JOURNAL
+          TASK JOURNAL · V4
         </div>
       </div>
       <span style={{

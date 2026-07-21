@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import gsap from "gsap";
+import { Flip } from "gsap/Flip";
+import { useGSAP } from "@gsap/react";
 import {
   type Task, type TaskCategory, type TaskStatus,
   isDone, flattenTasks, countSubtasks, formatDateHe,
@@ -8,6 +11,8 @@ import {
   HE_MONTHS, HE_WEEKDAYS_FULL,
 } from "@/lib/tasks";
 import { T, card, Ic, StatusIcon } from "./ui";
+
+gsap.registerPlugin(Flip, useGSAP);
 
 // chart fills snapped to the dark-band (validated); UI text keeps STATUS_COLORS
 const STATUS_FILL: Record<TaskStatus, string> = {
@@ -287,8 +292,25 @@ export function BoardView({ roots, catById, todayKey, onOpen, onSetStatus }: Vie
   const [dragOver, setDragOver] = useState<TaskStatus | null>(null);
   const cols: TaskStatus[] = ["todo", "in_progress", "done"];
 
+  const boardRef = useRef<HTMLDivElement>(null);
+  const flipState = useRef<ReturnType<typeof Flip.getState> | null>(null);
+
+  // מריץ אחרי שהעמודות התעדכנו ב-React — הקלף גולש מהמיקום הישן לחדש
+  useGSAP(() => {
+    if (!flipState.current) return;
+    Flip.from(flipState.current, {
+      targets: "[data-task-card]", duration: 0.45, ease: "power3.inOut", absolute: true,
+    });
+    flipState.current = null;
+  }, { scope: boardRef, dependencies: [roots] });
+
+  function captureBoard() {
+    if (!boardRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    flipState.current = Flip.getState(boardRef.current.querySelectorAll("[data-task-card]"));
+  }
+
   return (
-    <div className="tj-board" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, alignItems: "start" }}>
+    <div ref={boardRef} className="tj-board" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, alignItems: "start" }}>
       {cols.map((s) => {
         const items = roots.filter((t) => t.status === s);
         const over = dragOver === s;
@@ -300,7 +322,7 @@ export function BoardView({ roots, catById, todayKey, onOpen, onSetStatus }: Vie
               e.preventDefault();
               setDragOver(null);
               const id = e.dataTransfer.getData("text/task-id");
-              if (id) onSetStatus(id, s);
+              if (id) { captureBoard(); onSetStatus(id, s); }
             }}
             style={{
               ...card, padding: 10,
@@ -317,8 +339,9 @@ export function BoardView({ roots, catById, todayKey, onOpen, onSetStatus }: Vie
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7, minHeight: 60 }}>
               {items.map((t) => (
-                <div key={t.id} draggable
-                  onDragStart={(e) => e.dataTransfer.setData("text/task-id", t.id)}
+                <div key={t.id} draggable data-task-card data-flip-id={t.id}
+                  onDragStart={(e) => { e.dataTransfer.setData("text/task-id", t.id); e.currentTarget.style.opacity = "0.45"; }}
+                  onDragEnd={(e) => { e.currentTarget.style.opacity = ""; }}
                   style={{ cursor: "grab" }}>
                   <MiniCard t={t} cat={t.categoryId ? catById[t.categoryId] : undefined} todayKey={todayKey} onOpen={onOpen} />
                 </div>

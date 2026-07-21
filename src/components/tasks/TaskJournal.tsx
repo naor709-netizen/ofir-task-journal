@@ -1248,8 +1248,10 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
   const done = isDone(task);
   const overdue = !done && task.dueDate && task.dueDate < todayKey;
   const accent = critical ? T.danger : (cat?.color ?? T.ink3);
+
   return (
     <div
+      data-task-row
       onClick={onOpen}
       style={{
         display: "flex", alignItems: "center", gap: 11, cursor: "pointer",
@@ -1264,7 +1266,20 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
     >
       <button
         title={`סטטוס: ${STATUS_LABELS[task.status]} (לחיצה מקדמת)`}
-        onClick={(e) => { e.stopPropagation(); onCycle(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          // הבזק סיום — פעימה + הילה ירוקה, ורק אז המשימה עוברת ל"הושלמו"
+          const row = e.currentTarget.closest("[data-task-row]");
+          if (task.status === "in_progress" && row &&
+              !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            gsap.fromTo(row, { scale: 1 },
+              { scale: 1.02, duration: 0.14, yoyo: true, repeat: 1, ease: "power2.out", clearProps: "transform", onComplete: onCycle });
+            gsap.fromTo(row, { boxShadow: "0 0 0 0 rgba(15,164,126,0)" },
+              { boxShadow: "0 0 0 6px rgba(15,164,126,0.30)", duration: 0.14, yoyo: true, repeat: 1, ease: "power1.out", clearProps: "boxShadow" });
+          } else {
+            onCycle();
+          }
+        }}
         style={{
           background: "none", border: "none", cursor: "pointer", padding: 2,
           color: STATUS_COLORS[task.status], display: "inline-flex", flexShrink: 0,

@@ -1,0 +1,39 @@
+name: Watchdog
+
+# שומר חיצוני ובלתי תלוי: רץ אצל GitHub, לא ב-Vercel ולא ב-Supabase,
+# ולכן מסוגל לזהות גם נפילה של אחד מהם.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check journal health
+        run: |
+          SITE="https://ofir-task-journal.vercel.app"
+
+          CODE=$(curl -sS -o body.json -w "%{http_code}" --max-time 25 "$SITE/api/health" || echo "000")
+          echo "HTTP $CODE"
+          cat body.json 2>/dev/null || true
+          echo
+
+          if [ "$CODE" = "000" ]; then
+            echo "::error::האתר לא מגיב בכלל — ייתכן שהפריסה נפלה"
+            exit 1
+          fi
+
+          if [ "$CODE" = "200" ]; then
+            echo "הכול תקין"
+            exit 0
+          fi
+
+          # לא תקין: מבקשים מהשרת להתריע (הוא מאמת בעצמו ומגביל תדירות)
+          echo "::warning::בדיקת הבריאות נכשלה — שולח התראה"
+          curl -sS -X POST --max-time 25 "$SITE/api/watchdog" || true
+          echo
+
+          echo "::error::היומן דיווח על תקלה (ראה את הפלט למעלה)"
+          exit 1

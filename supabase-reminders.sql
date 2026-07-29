@@ -4,6 +4,9 @@
 --
 -- דרישה מוקדמת: להפעיל את התוספים pg_cron ו-pg_net
 -- (Dashboard → Database → Extensions → חפש והפעל את שניהם)
+--
+-- לפני ההרצה: החלף את __CRON_SECRET__ בערך האמיתי מ-Vercel.
+-- אין לשמור את הסוד בקובץ הזה — הריפו ציבורי.
 -- ============================================================
 
 -- טבלת מנויי הדפדפנים שקיבלו הרשאת התראות
@@ -36,7 +39,7 @@ select cron.schedule('ofir-reminders', '* * * * *', $$
     url     := 'https://ofir-task-journal.vercel.app/api/send-reminders',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-cron-secret', '18b6380f5abac69a273037a2601c2cbd8d9a25581fcad8c1'
+      'x-cron-secret', '__CRON_SECRET__'
     )
   );
 $$);

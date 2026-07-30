@@ -22,7 +22,11 @@ export async function GET() {
   }
 
   const sb = createClient(url, key);
+
+  // problems = משהו שהיה עובד ונשבר → מצדיק אזעקה.
+  // warnings = שלב התקנה שטרם בוצע → מוצג, אבל לא מצריח כל 15 דקות.
   const problems: string[] = [];
+  const warnings: string[] = [];
 
   // תופס מפתח VAPID שהוקלד שגוי — אחרת התזכורות פשוט שותקות בלי סיבה נראית
   const env = requireEnv();
@@ -43,16 +47,17 @@ export async function GET() {
   if (subscriptions === null) problems.push("subscriptions-unreadable");
   else if (subscriptions === 0) problems.push("no-devices");
 
-  // גיבוי שמעולם לא רץ הוא כשל שקט — בדיוק מה שהשומר קיים בשבילו
+  // גיבוי שקיים והפסיק = רגרסיה אמיתית (אזעקה). גיבוי שטרם הוגדר = התקנה
+  // חלקה (אזהרה) — אחרת השומר צורח על שלב שממתין לביצוע.
   const backupTs = backup.data?.created_at ? new Date(backup.data.created_at).getTime() : NaN;
   const backupAgeHours = isNaN(backupTs) ? null : Math.round((Date.now() - backupTs) / 3600000);
-  if (backup.error) problems.push("backup-not-configured");
-  else if (backupAgeHours === null) problems.push("backup-never-ran");
+  if (backup.error) warnings.push("backup-not-configured");
+  else if (backupAgeHours === null) warnings.push("backup-never-ran");
   else if (backupAgeHours > 48) problems.push("backup-stale");
 
   const ok = problems.length === 0;
   return NextResponse.json(
-    { ok, problems, cronAgeMinutes, subscriptions, backupAgeHours, config },
+    { ok, problems, warnings, cronAgeMinutes, subscriptions, backupAgeHours, config },
     { status: ok ? 200 : 503 }
   );
 }

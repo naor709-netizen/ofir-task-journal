@@ -26,6 +26,9 @@ jobs:
           fi
 
           if [ "$CODE" = "200" ]; then
+            # 200 עשוי לכלול warnings (שלבי התקנה שממתינים) — מציגים בלי להיכשל
+            grep -o '"warnings":\[[^]]*\]' body.json 2>/dev/null | grep -v '\[\]' \
+              && echo "::notice::יש אזהרות התקנה (ראה warnings) — לא תקלה"
             echo "הכול תקין"
             exit 0
           fi

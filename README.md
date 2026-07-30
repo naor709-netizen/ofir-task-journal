@@ -56,15 +56,16 @@ npm run dev
 1. **מפתחות VAPID** — צור עם `npx web-push generate-vapid-keys` והוסף ל-Vercel:
    `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (mailto), ו-`CRON_SECRET` (מחרוזת אקראית).
 2. **Supabase** — הפעל את התוספים `pg_cron` ו-`pg_net` (Database → Extensions), ואז הרץ את
-   [`supabase-reminders.sql`](./supabase-reminders.sql) (יוצר טבלאות + משימת cron שכל דקה קוראת ל-`/api/send-reminders`).
+   [`supabase-cron.sql`](./supabase-cron.sql) (יוצר את כל הטבלאות ומתזמן את כל המשימות, כולל זו שכל דקה קוראת ל-`/api/send-reminders`).
 3. **במכשיר** — לחץ "הפעל התראות" ביומן ואשר. באייפון: קודם "הוסף למסך הבית" (Web Push נתמך רק ב-PWA מותקן, iOS 16.4+).
 
 הזרימה: `pg_cron` (כל דקה) → `/api/send-reminders` → מאתר תזכורות שהגיע זמנן → שולח Web Push לכל המכשירים הרשומים.
 
 **אבחון**: אם התראות מגיעות רק כשהיומן פתוח — לחיצה על כפתור ההתראות בסרגל (כשהוא במצב "התראות פעילות"/"חסומות") מציגה אבחון מלא: אילו מפתחות חסרים ב-Vercel, האם הטבלאות קיימות ב-Supabase, האם ה-cron רץ ומתי, וכמה מכשירים רשומים — כולל השלב המדויק שחסר.
 
-> ⚠️ הריפו ציבורי — **אין לשמור את `CRON_SECRET` בקבצי ה-SQL.** בקבצים מופיע
-> `__CRON_SECRET__` כמציין מקום; יש להחליף אותו בעורך של Supabase לפני ההרצה.
+> ⚠️ הריפו ציבורי — **אין לשמור את `CRON_SECRET` באף קובץ.** הוא נשמר בטבלה
+> `app_config` ב-Supabase, שמוגנת ב-RLS בלי אף policy ולכן מפתח ה-anon הציבורי
+> לא יכול לקרוא אותה. מתזמני ה-cron קוראים את הערך משם.
 
 ## אוטומציות מתוזמנות
 
@@ -81,8 +82,9 @@ npm run dev
 
 **הפעלה:**
 
-1. **Supabase** — הרץ את [`supabase-automations.sql`](./supabase-automations.sql)
-   (אחרי החלפת `__CRON_SECRET__`). יוצר את הטבלאות ומתזמן את ארבע המשימות.
+1. **Supabase** — הרץ את [`supabase-cron.sql`](./supabase-cron.sql). זה הקובץ היחיד
+   שצריך: יוצר את כל הטבלאות ומתזמן את חמש המשימות. הדבר היחיד לערוך בו הוא
+   שורת הסוד המסומנת ב-✏️ (שלב 2 בקובץ). בטוח להריץ שוב בכל עת.
 2. **שומר התקלות** — רץ מעצמו דרך GitHub Actions
    ([`.github/workflows/watchdog.yml`](./.github/workflows/watchdog.yml)). הוא מאוחסן
    אצל GitHub ולכן מזהה גם נפילה של Vercel או של Supabase. בכישלון הוא מסמן את
@@ -101,6 +103,12 @@ curl -X POST -H "x-cron-secret: <SECRET>" \
 ```
 
 `/api/health` ציבורי אך מחזיר בוליאנים ומספרים בלבד — בלי ערכים רגישים.
+הוא מדווח על תקלה גם כשגיבוי מעולם לא רץ, ולכן אחרי ההתקנה כדאי להריץ גיבוי
+אחד ידנית (הפקודה בסוף [`supabase-cron.sql`](./supabase-cron.sql)) כדי לקבל ירוק.
+
+**איפה רואים כל אוטומציה:** ארבע המתוזמנות ב-Supabase → Database → Cron;
+שומר התקלות ב-GitHub → Actions; ובודק הבאגים (רוטין של Claude, נפרד מהאפליקציה)
+ברשימת ה-Routines.
 
 **שחזור מגיבוי:** ההוראות בתחתית [`supabase-automations.sql`](./supabase-automations.sql).
 

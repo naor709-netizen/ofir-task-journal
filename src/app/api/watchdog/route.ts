@@ -10,6 +10,8 @@ const PROBLEM_TEXT: Record<string, string> = {
   "no-devices": "אין אף מכשיר רשום להתראות",
   "subscriptions-unreadable": "לא ניתן לקרוא את טבלת המנויים ב-Supabase",
   "backup-stale": "לא נשמר גיבוי מעל 48 שעות",
+  "backup-not-configured": "טבלת הגיבויים לא קיימת — יש להריץ את supabase-cron.sql",
+  "backup-never-ran": "מעולם לא נשמר גיבוי",
 };
 
 // נקרא ע"י השומר החיצוני. אין צורך בסוד: הנתיב בודק את הבריאות בעצמו

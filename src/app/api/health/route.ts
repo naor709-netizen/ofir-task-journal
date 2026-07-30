@@ -43,9 +43,12 @@ export async function GET() {
   if (subscriptions === null) problems.push("subscriptions-unreadable");
   else if (subscriptions === 0) problems.push("no-devices");
 
+  // גיבוי שמעולם לא רץ הוא כשל שקט — בדיוק מה שהשומר קיים בשבילו
   const backupTs = backup.data?.created_at ? new Date(backup.data.created_at).getTime() : NaN;
   const backupAgeHours = isNaN(backupTs) ? null : Math.round((Date.now() - backupTs) / 3600000);
-  if (backupAgeHours !== null && backupAgeHours > 48) problems.push("backup-stale");
+  if (backup.error) problems.push("backup-not-configured");
+  else if (backupAgeHours === null) problems.push("backup-never-ran");
+  else if (backupAgeHours > 48) problems.push("backup-stale");
 
   const ok = problems.length === 0;
   return NextResponse.json(

@@ -32,18 +32,25 @@ export async function GET() {
   const env = requireEnv();
   if (!env.ok) problems.push(`bad-config: ${env.reason}`);
 
-  const [hb, subs, backup] = await Promise.all([
+  const [hb, subs, backup, log] = await Promise.all([
     sb.from("reminders_sent").select("sent_at").eq("reminder_id", "__cron_heartbeat__").maybeSingle(),
     sb.from("push_subscriptions").select("endpoint", { count: "exact", head: true }),
     sb.from("journal_backups").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    // select רגיל ולא head+count: על head בלי גוף תגובה שגיאת "טבלה חסרה"
+    // לא תמיד מדווחת ע"י supabase-js, וההסתמכות עליה החמיצה את התקלה
+    sb.from("automation_log").select("key").limit(1),
   ]);
+
+  // בלי הטבלה הזו אין מנגנון השתקה להתראות — והשומר מוותר על שליחה כדי לא להציף
+  if (log.error) warnings.push("automation-log-missing (alerts suppressed)");
 
   const hbTs = hb.data?.sent_at ? new Date(hb.data.sent_at).getTime() : NaN;
   const cronAgeMinutes = isNaN(hbTs) ? null : Math.round((Date.now() - hbTs) / 60000);
   if (cronAgeMinutes === null) problems.push("cron-never-ran");
   else if (cronAgeMinutes > 10) problems.push("cron-stale");
 
-  const subscriptions = subs.error ? null : (subs.count ?? 0);
+  // count === null מציין שהספירה לא הוחזרה — נחשב "לא קריא", לא "אפס מכשירים"
+  const subscriptions = subs.error || subs.count === null ? null : subs.count;
   if (subscriptions === null) problems.push("subscriptions-unreadable");
   else if (subscriptions === 0) problems.push("no-devices");
 

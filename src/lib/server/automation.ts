@@ -177,16 +177,17 @@ export async function notify(
 
 // ---- יומן ריצות + מניעת הצפה בהתראות ----
 
-// רישום הוא נלווה בלבד — לעולם לא מפיל את המשימה עצמה, ובעיקר לא את
-// מסלול הטיפול בשגיאה שקורא לו כשמסד הנתונים כבר לא זמין.
-export async function record(sb: SupabaseClient, key: string, detail: unknown): Promise<void> {
+// רישום לא מפיל את המשימה, אבל כן מדווח אם נכשל: מנגנון ההשתקה של ההתראות
+// מסתמך עליו, ובלי הידיעה הזו השומר היה מתריע שוב ושוב בלי סוף.
+export async function record(sb: SupabaseClient, key: string, detail: unknown): Promise<boolean> {
   try {
-    await sb.from("automation_log").upsert(
+    const { error } = await sb.from("automation_log").upsert(
       { key, last_run_at: new Date().toISOString(), detail: detail as object },
       { onConflict: "key" }
     );
+    return !error;
   } catch {
-    /* best-effort */
+    return false;
   }
 }
 

@@ -37,6 +37,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, problems, alerted: false, reason: "cooldown" });
   }
 
+  // "תופסים" את החלון לפני השליחה. אם אי אפשר לרשום (למשל automation_log
+  // עדיין לא קיימת) — לא שולחים בכלל, אחרת כל בדיקה תתריע מחדש ותציף בהתראות.
+  if (!(await record(sb, "alert:watchdog", { problems }))) {
+    return NextResponse.json({
+      ok: false, problems, alerted: false,
+      reason: "cannot-record-cooldown — run supabase-cron.sql to create automation_log",
+    });
+  }
+
   const readable = problems.map((p) => PROBLEM_TEXT[p] ?? p);
   const out = await notify(
     sb,
@@ -50,6 +59,5 @@ export async function POST(req: Request) {
     }
   );
 
-  await record(sb, "alert:watchdog", { problems });
   return NextResponse.json({ ok: false, problems, alerted: true, ...out });
 }

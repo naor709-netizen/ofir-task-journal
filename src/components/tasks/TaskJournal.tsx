@@ -937,7 +937,12 @@ export default function TaskJournal() {
                           <span className="num" style={{ color: T.mint, fontWeight: 700 }}>{pct}%</span>
                         </div>
                         <div style={{ height: 5, borderRadius: 99, background: T.surface2, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${pct}%`, borderRadius: 99, background: T.mint, transition: "width .8s cubic-bezier(0.32,0.72,0,1)" }} />
+                          {/* scaleX ולא width: הנפשת רוחב מכריחה פריסה מחדש בכל פריים */}
+                          <div style={{
+                            height: "100%", width: "100%", borderRadius: 99, background: T.mint,
+                            transform: `scaleX(${Math.max(pct, 0) / 100})`, transformOrigin: "right",
+                            transition: "transform .8s cubic-bezier(0.32,0.72,0,1)",
+                          }} />
                         </div>
                       </div>
                     </div>

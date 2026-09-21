@@ -43,7 +43,7 @@ function SectionCard({ title, icon, badge, children }: {
   );
 }
 
-function MiniCard({ t, cat, todayKey, onOpen }: { t: Task; cat?: TaskCategory; todayKey: string; onOpen: (id: string) => void }) {
+function MiniCard({ t, cat, todayKey, onOpen, hideDate }: { t: Task; cat?: TaskCategory; todayKey: string; onOpen: (id: string) => void; hideDate?: boolean }) {
   const done = isDone(t);
   const overdue = !done && t.dueDate && t.dueDate < todayKey;
   return (
@@ -51,24 +51,27 @@ function MiniCard({ t, cat, todayKey, onOpen }: { t: Task; cat?: TaskCategory; t
       background: T.bg2, border: `1px solid ${T.line}`,
       borderInlineStart: `3px solid ${t.critical ? T.danger : (cat?.color ?? T.ink3)}`,
       borderRadius: 10, padding: "8px 10px", cursor: "pointer",
-      opacity: done ? 0.55 : 1,
+      opacity: done ? 0.55 : 1, minWidth: 0,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ color: STATUS_COLORS[t.status], display: "inline-flex", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0 }}>
+        <span style={{ color: STATUS_COLORS[t.status], display: "inline-flex", flexShrink: 0, marginTop: 1 }}>
           <StatusIcon status={t.status} size={13} />
         </span>
         <span style={{
           fontSize: 12, fontWeight: 600, color: T.ink, minWidth: 0,
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          // שבע עמודות משאירות ~85px לכותרת; שורה אחת עם ellipsis חתכה
+          // כל משימה אחרי מילה. שתי שורות מחזירות את המשפט.
+          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+          overflow: "hidden", overflowWrap: "anywhere", lineHeight: 1.3,
           textDecoration: done ? "line-through" : "none",
         }}>{t.title || "ללא שם"}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
         {t.critical && <span style={{ color: T.danger, display: "inline-flex" }}>{Ic.flame(10)}</span>}
         {cat && <span style={{ fontSize: 9.5, color: cat.color }}>{cat.name}</span>}
-        {t.dueDate && (
+        {t.dueDate && (!hideDate || overdue) && (
           <span className="num" style={{ fontSize: 9.5, color: overdue ? T.danger : T.ink3 }}>
-            {formatDateHe(t.dueDate)}{overdue ? " · באיחור" : ""}
+            {hideDate ? "באיחור" : `${formatDateHe(t.dueDate)}${overdue ? " · באיחור" : ""}`}
           </span>
         )}
       </div>
@@ -111,7 +114,7 @@ export function WeekView({ roots, catById, todayKey, onOpen }: ViewProps) {
       )}
 
       <SectionCard title="שבעת הימים הקרובים" icon={Ic.week(16)}>
-        <div className="tj-week" style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 8 }}>
+        <div className="tj-week" style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 8 }}>
           {days.map(({ key, date }, i) => {
             const dayTasks = all.filter((t) => t.dueDate === key);
             const isToday = key === todayKey;
@@ -132,13 +135,13 @@ export function WeekView({ roots, catById, todayKey, onOpen }: ViewProps) {
                 {dayTasks.length === 0 ? (
                   <span style={{ fontSize: 10, color: T.ink3, opacity: 0.6 }}>—</span>
                 ) : dayTasks.map((t) => (
-                  <MiniCard key={t.id} t={t} cat={t.categoryId ? catById[t.categoryId] : undefined} todayKey={todayKey} onOpen={onOpen} />
+                  <MiniCard key={t.id} t={t} cat={t.categoryId ? catById[t.categoryId] : undefined} todayKey={todayKey} onOpen={onOpen} hideDate />
                 ))}
               </div>
             );
           })}
         </div>
-        <style>{`@media (max-width: 900px) { .tj-week { grid-template-columns: 1fr !important; } .tj-week > div { min-height: 0 !important; } }`}</style>
+        <style>{`@media (max-width: 900px) { .tj-week { grid-template-columns: minmax(0,1fr) !important; } .tj-week > div { min-height: 0 !important; } }`}</style>
       </SectionCard>
     </div>
   );
@@ -310,7 +313,7 @@ export function BoardView({ roots, catById, todayKey, onOpen, onSetStatus }: Vie
   }
 
   return (
-    <div ref={boardRef} className="tj-board" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, alignItems: "start" }}>
+    <div ref={boardRef} className="tj-board" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 10, alignItems: "start" }}>
       {cols.map((s) => {
         const items = roots.filter((t) => t.status === s);
         const over = dragOver === s;
@@ -358,7 +361,7 @@ export function BoardView({ roots, catById, todayKey, onOpen, onSetStatus }: Vie
           </div>
         );
       })}
-      <style>{`@media (max-width: 900px) { .tj-board { grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`@media (max-width: 900px) { .tj-board { grid-template-columns: minmax(0,1fr) !important; } }`}</style>
     </div>
   );
 }
@@ -414,7 +417,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* hero tiles */}
-      <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+      <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 1fr 1fr", gap: 10 }}>
         <div style={{ ...card, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
           <svg width="60" height="60" viewBox="0 0 60 60" style={{ flexShrink: 0 }}>
             <circle cx="30" cy="30" r={ringR} fill="none" stroke={T.surface2} strokeWidth="6" />
@@ -452,7 +455,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
         </div>
       </SectionCard>
 
-      <div className="tj-statgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
+      <div className="tj-statgrid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 14, alignItems: "start" }}>
         {/* by category — horizontal bars */}
         <SectionCard title="משימות לפי קטגוריה" icon={Ic.layers(16)}>
           {byCat.length === 0 ? (
@@ -519,7 +522,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
           </div>
         </SectionCard>
       </div>
-      <style>{`@media (max-width: 900px) { .tj-statgrid { grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`@media (max-width: 900px) { .tj-statgrid { grid-template-columns: minmax(0,1fr) !important; } }`}</style>
     </div>
   );
 }

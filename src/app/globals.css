@@ -6,55 +6,116 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   color-scheme: light;
 
-  /* ערכת נושא — בהיר (ברירת מחדל) */
-  --tj-bg: #F2F5F9;
-  --tj-bg2: #F7FAFD;
+  /* ---------- רמפת המותג ----------
+     ארבעת הערכים האמצעיים נלקחו מקובץ הלוגו של ההסתדרות עצמו
+     (logo-histadrut.svg), והקצוות נגזרו מהם. זו הרמפה היחידה של הכרום. */
+  --tj-brand-800: #0B3A76;
+  --tj-brand-700: #0F4C97;  /* מהלוגו — כחול עמוק */
+  --tj-brand-600: #15619D;
+  --tj-brand-500: #1187C9;  /* מהלוגו — כחול ביניים */
+  --tj-brand-400: #35BDF2;  /* מהלוגו — תכלת */
+  --tj-brand-300: #4FC1F0;  /* מהלוגו — תכלת בהיר */
+  --tj-brand-200: #9BDCF8;
+  --tj-brand-100: #D6EFFC;
+
+  /* ---------- ערכת נושא — בהיר ---------- */
+  --tj-bg: #EEF5FB;
+  --tj-bg2: #F7FBFE;
   --tj-surface: #FFFFFF;
-  --tj-surface2: #EAF0F7;
+  --tj-surface2: #E4EFF9;
   --tj-input: #FFFFFF;
-  --tj-line: rgba(23,43,77,0.12);
-  --tj-line-strong: rgba(23,43,77,0.24);
-  --tj-ink: #15253F;
-  --tj-ink2: #4A5E78;
-  --tj-ink3: #7C8DA4;
-  --tj-accent: #2563EB;
-  --tj-accent-soft: rgba(37,99,235,0.10);
-  --tj-mint: #0FA47E;
-  --tj-mint-soft: rgba(15,164,126,0.12);
-  --tj-danger: #DC2626;
-  --tj-danger-soft: rgba(220,38,38,0.10);
-  --tj-amber: #B45309;
+  --tj-line: rgba(15,76,151,0.12);
+  --tj-line-strong: rgba(15,76,151,0.24);
+  --tj-ink: #0B2239;
+  --tj-ink2: #3D5B78;
+  --tj-ink3: #506F8B;
+
+  /* accent = תפקיד הטקסט והפעולה. bright/azure = תפקיד המילוי והאווירה.
+     ההפרדה אינה אסתטית: על לבן, ‎#35BDF2 מגיע ל-2.16:1 בלבד ולכן אסור
+     שיישא טקסט או אייקון — הוא צובע שטחים, זוהר וגרפים. */
+  --tj-accent: #0F4C97;
+  --tj-accent-bright: #0E8FC6;
+  --tj-accent-azure: #35BDF2;
+  --tj-accent-soft: rgba(17,135,201,0.10);
+  --tj-accent-wash: rgba(53,189,242,0.14);
+
+  /* סטטוס ומהות — היו hex קבועים שלא התחלפו בין נושאים, וחלקם נפלו מ-AA.
+     כאן הם טוקנים, ושתי הערכות מאומתות מול כל משטח שהטקסט נוחת עליו. */
+  --tj-st-todo: #4A5C70;
+  --tj-st-progress: #8A4B08;
+  --tj-st-done: #0A7358;
+  --tj-nat-personal: #6A28C4;
+  --tj-nat-urgent: #C2321F;
+  --tj-nat-routine: #0B6E9E;
+
+  --tj-mint: #0A7358;
+  --tj-mint-soft: rgba(10,115,88,0.12);
+  --tj-danger: #C2321F;
+  --tj-danger-soft: rgba(194,50,31,0.10);
+  --tj-amber: #8A4B08;
   --tj-chipmix: #000000;
-  --tj-shadow: rgba(23,43,77,0.06);
-  --tj-shadow-strong: rgba(23,43,77,0.18);
-  --tj-glass: rgba(255,255,255,0.72);
-  --tj-bezel: rgba(255,255,255,0.65);
+
+  /* ---------- חומר ואור ----------
+     כיוון אור אחיד מלמעלה: הדגשה בקצה העליון, מגע מתחת, ואמביינט רחב. */
+  --tj-shadow: rgba(11,58,118,0.07);
+  --tj-shadow-strong: rgba(11,58,118,0.20);
+  --tj-glass: rgba(255,255,255,0.70);
+  --tj-bezel: rgba(255,255,255,0.85);
+  --tj-bezel-low: rgba(15,76,151,0.06);
+  --tj-specular: rgba(255,255,255,0.55);
+  --tj-grain: 0.022;
+
+  /* ---------- תנועה ----------
+     האטה מעריכית: הגעה בטוחה שמתיישבת, לא עצירה מכנית. */
+  --ease-arrive: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-settle: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-feedback: 130ms;
+  --t-state: 240ms;
+  --t-layout: 420ms;
 }
 
 html[data-theme="dark"] {
   color-scheme: dark;
-  --tj-bg: #0B1220;
-  --tj-bg2: #0F1729;
-  --tj-surface: #131D31;
-  --tj-surface2: #1C2A44;
-  --tj-input: #0F1729;
-  --tj-line: rgba(148,178,255,0.14);
-  --tj-line-strong: rgba(148,178,255,0.30);
-  --tj-ink: #E8EFFA;
-  --tj-ink2: #A5B6D0;
-  --tj-ink3: #7488A9;
-  --tj-accent: #5B8CFF;
-  --tj-accent-soft: rgba(91,140,255,0.16);
-  --tj-mint: #2BC29A;
-  --tj-mint-soft: rgba(43,194,154,0.16);
-  --tj-danger: #F26D6D;
-  --tj-danger-soft: rgba(242,109,109,0.14);
-  --tj-amber: #E8A13D;
+  /* מורכב מחדש, לא היפוך של הבהיר: הרקע הוא כחול-לילה מאותה משפחה,
+     והתכלת עולה לחזית כי היא הצבע היחיד שנושא ניגודיות על כהה. */
+  --tj-bg: #061426;
+  --tj-bg2: #0A1C31;
+  --tj-surface: #0E2138;
+  --tj-surface2: #16304C;
+  --tj-input: #0A1C31;
+  --tj-line: rgba(121,190,240,0.14);
+  --tj-line-strong: rgba(121,190,240,0.30);
+  --tj-ink: #E6F2FB;
+  --tj-ink2: #A3BFD9;
+  --tj-ink3: #84A2BE;
+
+  --tj-accent: #4FC1F0;
+  --tj-accent-bright: #35BDF2;
+  --tj-accent-azure: #4FC1F0;
+  --tj-accent-soft: rgba(79,193,240,0.16);
+  --tj-accent-wash: rgba(53,189,242,0.12);
+
+  --tj-st-todo: #9FB5C9;
+  --tj-st-progress: #EDB259;
+  --tj-st-done: #3FD3AC;
+  --tj-nat-personal: #C4A6FF;
+  --tj-nat-urgent: #F58A7B;
+  --tj-nat-routine: #6FC8F0;
+
+  --tj-mint: #3FD3AC;
+  --tj-mint-soft: rgba(63,211,172,0.16);
+  --tj-danger: #F58A7B;
+  --tj-danger-soft: rgba(245,138,123,0.14);
+  --tj-amber: #EDB259;
   --tj-chipmix: #FFFFFF;
-  --tj-shadow: rgba(0,0,0,0.35);
-  --tj-shadow-strong: rgba(0,0,0,0.55);
-  --tj-glass: rgba(15,23,41,0.72);
-  --tj-bezel: rgba(148,178,255,0.08);
+
+  --tj-shadow: rgba(0,0,0,0.42);
+  --tj-shadow-strong: rgba(0,0,0,0.62);
+  --tj-glass: rgba(10,28,49,0.72);
+  --tj-bezel: rgba(121,190,240,0.10);
+  --tj-bezel-low: rgba(0,0,0,0.30);
+  --tj-specular: rgba(121,190,240,0.16);
+  --tj-grain: 0.045;
 }
 
 * { box-sizing: border-box; }
@@ -63,41 +124,119 @@ html { direction: rtl; }
 
 body {
   margin: 0;
+  /* שדה אור ולא "כתם צבע": תכלת רחבה נכנסת מלמעלה-ימין, רפלקס קריר
+     חוזר מלמטה-שמאל, ונפילת אור אנכית עדינה מחזיקה את כיוון התאורה. */
   background:
-    radial-gradient(1100px 560px at 100% -8%, var(--tj-accent-soft), transparent 58%),
-    radial-gradient(950px 520px at -6% 104%, var(--tj-accent-soft), transparent 55%),
+    radial-gradient(1200px 620px at 100% -10%, var(--tj-accent-wash), transparent 60%),
+    radial-gradient(900px 500px at -8% 106%, var(--tj-accent-soft), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,0.55), transparent 42%),
     var(--tj-bg);
   background-attachment: fixed;
   color: var(--tj-ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background .25s ease, color .25s ease;
+  transition: background var(--t-state) var(--ease-settle), color var(--t-state) var(--ease-settle);
+}
+html[data-theme="dark"] body {
+  background:
+    radial-gradient(1200px 620px at 100% -10%, var(--tj-accent-wash), transparent 60%),
+    radial-gradient(900px 500px at -8% 106%, var(--tj-accent-soft), transparent 58%),
+    linear-gradient(180deg, rgba(121,190,240,0.05), transparent 40%),
+    var(--tj-bg);
+  background-attachment: fixed;
 }
 
 /* גרעון עדין שובר את הסטריליות של משטחים שטוחים — שכבת טקסטורה קבועה */
 body::after {
   content: "";
   position: fixed; inset: 0; z-index: 1; pointer-events: none;
-  opacity: 0.026;
+  opacity: var(--tj-grain);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-html[data-theme="dark"] body::after { opacity: 0.05; }
 
 button {
-  transition: background .35s cubic-bezier(0.32,0.72,0,1), border-color .35s cubic-bezier(0.32,0.72,0,1),
-    box-shadow .35s cubic-bezier(0.32,0.72,0,1), color .35s cubic-bezier(0.32,0.72,0,1), transform .12s ease-out;
+  transition:
+    background var(--t-state) var(--ease-settle),
+    border-color var(--t-state) var(--ease-settle),
+    box-shadow var(--t-state) var(--ease-settle),
+    color var(--t-state) var(--ease-settle),
+    transform var(--t-feedback) var(--ease-arrive);
   font-family: inherit;
 }
-button:active { transform: scale(0.98); }
+button:active { transform: scale(0.985); }
 
-/* כרטיסים "צפים": הריחוף מתבטא בצל מתעמק (לא transform — לא מתנגש ב-GSAP) */
-.tj-card { transition: box-shadow .45s cubic-bezier(0.32,0.72,0,1), border-color .45s cubic-bezier(0.32,0.72,0,1); }
+/* ---------- כרטיסים ----------
+   הריחוף אינו "הרמה": האור נשאר במקומו והצל מתעמק ומתרחק, כמו משטח
+   שמתרומם מעל הנייר. transform נשאר פנוי ל-GSAP. */
+.tj-card {
+  transition:
+    box-shadow var(--t-layout) var(--ease-arrive),
+    border-color var(--t-layout) var(--ease-arrive);
+}
 @media (hover: hover) {
   .tj-card:hover {
-    box-shadow: inset 0 1px 0 var(--tj-bezel), 0 2px 4px var(--tj-shadow), 0 32px 64px -28px var(--tj-shadow-strong) !important;
+    box-shadow:
+      inset 0 1px 0 var(--tj-bezel),
+      inset 0 -1px 0 var(--tj-bezel-low),
+      0 2px 4px var(--tj-shadow),
+      0 34px 68px -30px var(--tj-shadow-strong) !important;
   }
 }
+
+/* על רקע כהה אותו זוהר תכלת פורח ומטשטש את קצה הכפתור — כאן הוא מרוסן */
+html[data-theme="dark"] .tj-newbtn {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.20),
+    inset 0 -1px 0 rgba(0,0,0,0.28),
+    0 2px 6px -2px rgba(0,0,0,0.55),
+    0 10px 20px -14px var(--tj-accent-azure) !important;
+}
+
+/* ---------- ברק ספקולרי ----------
+   פס אור צר שחוצה משטח מבריק כשעוברים עליו — הכפתור הראשי וכרטיס-העל. */
+.tj-sheen { position: relative; overflow: hidden; }
+.tj-sheen::after {
+  content: "";
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, var(--tj-specular) 50%, transparent 62%);
+  transform: translateX(-130%);
+  opacity: 0;
+}
+@media (hover: hover) {
+  .tj-sheen:hover::after {
+    opacity: 1;
+    transform: translateX(130%);
+    transition: transform 820ms var(--ease-arrive), opacity 160ms linear;
+  }
+}
+
+/* ---------- רגע ההשלמה ----------
+   הרגע היחיד שבאמת מבוים: גל אור תכלת→מנטה חוצה את השורה פעם אחת,
+   ורק בסופו המשימה עוברת ל"הושלמו". */
+@keyframes tj-complete-sweep {
+  from { transform: translateX(-100%); opacity: 0; }
+  22%  { opacity: 1; }
+  to   { transform: translateX(100%); opacity: 0; }
+}
+.tj-completing { position: relative; overflow: hidden; }
+.tj-completing::after {
+  content: "";
+  position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(100deg,
+    transparent 30%,
+    var(--tj-accent-wash) 44%,
+    var(--tj-mint-soft) 56%,
+    transparent 70%);
+  animation: tj-complete-sweep 520ms var(--ease-arrive) forwards;
+}
+
+/* קו שנמתח תחת כותרת סקשן כשהיא נכנסת */
+.tj-rule {
+  transform-origin: right center;
+  animation: tj-rule-draw 560ms var(--ease-arrive) both;
+}
+@keyframes tj-rule-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 :focus-visible { outline: 2px solid var(--tj-accent); outline-offset: 2px; }
 
@@ -110,7 +249,7 @@ input, textarea, select { font-family: inherit; }
 
 .softblob { position: absolute; border-radius: 50%; filter: blur(48px); opacity: 0.35; pointer-events: none; }
 
-::selection { background: rgba(37,99,235,0.22); }
+::selection { background: var(--tj-accent-soft); }
 
 /* native date/time popups + scrollbars in dark */
 ::-webkit-calendar-picker-indicator { opacity: 0.7; }
@@ -120,4 +259,14 @@ input, textarea, select { font-family: inherit; }
     max-width: 100% !important; margin: 0 !important;
     border-radius: 0 !important; min-height: 100dvh; max-height: 100dvh !important;
   }
+}
+
+/* כל התנועה נכבית — כולל הרגע המבוים והברק */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .tj-sheen::after, .tj-completing::after { display: none; }
 }

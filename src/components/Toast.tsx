@@ -29,11 +29,13 @@ export function useToast() {
 }
 
 const ICONS = { success: "✓", error: "✕", info: "ℹ", warning: "⚠" };
+// נגזר מטוקני הנושא כדי שההודעות יתחלפו יחד עם שאר המסך
+const mix = (token: string, pct: number) => `color-mix(in srgb, ${token} ${pct}%, var(--tj-surface))`;
 const COLORS = {
-  success: { bg: "#DCFCE7", color: "#166534", border: "#86EFAC" },
-  error:   { bg: "#FEE2E2", color: "#991B1B", border: "#FCA5A5" },
-  info:    { bg: "#DBEAFE", color: "#1E40AF", border: "#93C5FD" },
-  warning: { bg: "#FEF3C7", color: "#854D0E", border: "#FCD34D" },
+  success: { bg: mix("var(--tj-mint)", 14),   color: "var(--tj-mint)",   border: mix("var(--tj-mint)", 34) },
+  error:   { bg: mix("var(--tj-danger)", 14), color: "var(--tj-danger)", border: mix("var(--tj-danger)", 34) },
+  info:    { bg: mix("var(--tj-accent-bright)", 14), color: "var(--tj-accent)", border: mix("var(--tj-accent-bright)", 34) },
+  warning: { bg: mix("var(--tj-amber)", 14),  color: "var(--tj-amber)",  border: mix("var(--tj-amber)", 34) },
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {

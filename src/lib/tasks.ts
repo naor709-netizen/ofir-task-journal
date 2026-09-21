@@ -15,9 +15,9 @@ export const NATURE_LABELS: Record<TaskNature, string> = {
 };
 
 export const NATURE_COLORS: Record<TaskNature, string> = {
-  personal: "#7C3AED",
-  urgent: "#DC2626",
-  routine: "#0284C7",
+  personal: "var(--tj-nat-personal)",
+  urgent: "var(--tj-nat-urgent)",
+  routine: "var(--tj-nat-routine)",
 };
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -27,9 +27,9 @@ export const STATUS_LABELS: Record<TaskStatus, string> = {
 };
 
 export const STATUS_COLORS: Record<TaskStatus, string> = {
-  todo: "#64748B",
-  in_progress: "#B45309",
-  done: "#0F8A6C",
+  todo: "var(--tj-st-todo)",
+  in_progress: "var(--tj-st-progress)",
+  done: "var(--tj-st-done)",
 };
 
 export interface TaskCategory {

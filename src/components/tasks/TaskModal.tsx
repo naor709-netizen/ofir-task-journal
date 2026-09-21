@@ -176,7 +176,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
       ref={overlayRef}
       onClick={requestClose}
       style={{
-        position: "fixed", inset: 0, zIndex: 100, background: "rgba(4,9,18,0.72)",
+        position: "fixed", inset: 0, zIndex: 100, background: "rgba(6,20,38,0.74)",
         backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 14,
       }}
     >
@@ -255,7 +255,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
                 return (
                   <button key={s} onClick={() => setStatus(s)} style={{
                     display: "inline-flex", alignItems: "center", gap: 6,
-                    background: active ? `${STATUS_COLORS[s]}22` : "transparent",
+                    background: active ? alpha(STATUS_COLORS[s], 13) : "transparent",
                     color: active ? STATUS_COLORS[s] : T.ink3,
                     border: "none", borderRadius: 8, padding: "6px 13px",
                     fontSize: 12, fontWeight: active ? 700 : 400, cursor: "pointer", fontFamily: "inherit",

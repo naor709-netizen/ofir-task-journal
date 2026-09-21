@@ -252,7 +252,6 @@ export default function TaskJournal() {
   const regularTasks = filteredTasks.filter((t) => !isDone(t) && !t.critical);
   const doneTasks = [...filteredTasks.filter(isDone)]
     .sort((a, b) => (b.endDate ?? "").localeCompare(a.endDate ?? ""));
-  const activeCount = filteredTasks.length - doneTasks.length;
 
   const allFlat = useMemo(() => flattenTasks(journal?.tasks ?? []), [journal]);
   const todayKey = toDateKey(today);
@@ -452,16 +451,29 @@ export default function TaskJournal() {
     entranceDone.current = true;
     const mm = gsap.matchMedia();
     mm.add("(prefers-reduced-motion: no-preference)", () => {
-      const tl = gsap.timeline({ defaults: { ease: "power3.out", duration: 0.55 } });
-      tl.from("header", { y: -16, opacity: 0, duration: 0.4, clearProps: "opacity,transform" })
-        .from(".tj-toolbar", { y: 12, opacity: 0, duration: 0.4, clearProps: "opacity,transform" }, "-=0.22")
-        .from(".tj-kpis > div", { y: 20, opacity: 0, stagger: 0.06, clearProps: "opacity,transform" }, "-=0.2")
-        .from(".tj-layout .tj-card", { y: 24, opacity: 0, stagger: 0.07, clearProps: "opacity,transform" }, "-=0.38");
+      // רגע אחד מבוים — כרטיס הסקירה נכנס לפוקוס — ושאר המסך מתיישב אחריו.
+      // אותה כניסה מדויקת לכל סקשן היא מה שגורם לדף להרגיש מונפש ולא חי.
+      const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
+      tl.from("header", { y: -14, opacity: 0, duration: 0.5, clearProps: "opacity,transform" })
+        .from(".tj-toolbar", { y: 10, opacity: 0, duration: 0.45, clearProps: "opacity,transform" }, "-=0.3")
+        .from(".tj-hero-card", {
+          y: 22, opacity: 0, scale: 0.975, filter: "blur(10px)", duration: 0.8,
+          clearProps: "opacity,transform,filter",
+        }, "-=0.26")
+        .from(".tj-kpis > div", {
+          y: 14, opacity: 0, duration: 0.55,
+          stagger: { each: 0.05, amount: 0.2 }, clearProps: "opacity,transform",
+        }, "-=0.52")
+        // התקרה על ה-stagger היא מה שמונע מהמסך התחתון לחכות לתורו
+        .from(".tj-layout .tj-card:not(.tj-hero-card)", {
+          y: 16, opacity: 0, duration: 0.6,
+          stagger: { each: 0.045, amount: 0.3 }, clearProps: "opacity,transform",
+        }, "-=0.46");
       gsap.utils.toArray<HTMLElement>(".tj-kpi-num").forEach((el) => {
         const end = parseInt(el.textContent || "0", 10) || 0;
         if (end > 0) {
           gsap.fromTo(el, { textContent: 0 },
-            { textContent: end, duration: 0.9, delay: 0.3, ease: "power2.out", snap: { textContent: 1 } });
+            { textContent: end, duration: 1.0, delay: 0.32, ease: "expo.out", snap: { textContent: 1 } });
         }
       });
     });
@@ -473,8 +485,9 @@ export default function TaskJournal() {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) return;
     gsap.fromTo(".tj-main",
-      { opacity: 0, y: 10 },
-      { opacity: 1, y: 0, duration: 0.32, ease: "power2.out", clearProps: "opacity,transform" });
+      { opacity: 0, y: 8, filter: "blur(5px)" },
+      { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.34, ease: "expo.out",
+        clearProps: "opacity,transform,filter" });
   }, { scope: rootRef, dependencies: [view] });
 
   const sync = {
@@ -484,10 +497,23 @@ export default function TaskJournal() {
     error:   { icon: Ic.alert(13),    label: "שגיאת סנכרון", color: T.danger },
   }[syncState];
 
+  function diagnoseSync() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    alert(
+      `אבחון סנכרון\n` +
+      `מצב: ${sync.label}\n` +
+      `כתובת Supabase בבנייה: ${url || "❌ חסרה"}\n` +
+      `מפתח anon בבנייה: ${key ? "✓ קיים (" + key.slice(0, 12) + "…)" : "❌ חסר"}\n` +
+      `שגיאה אחרונה: ${getSyncDetail() || "אין"}`
+    );
+  }
+
+
   if (!journal) {
     return (
       <div style={{ minHeight: "100vh", background: T.bg }}>
-        <Header sync={sync} />
+        <Header sync={sync} onDiagnose={diagnoseSync} />
         <div style={{ padding: 40, display: "grid", gap: 12 }}>
           <div style={{ height: 110, borderRadius: 16, background: T.surface }} />
           <div style={{ height: 340, borderRadius: 16, background: T.surface }} />
@@ -498,7 +524,7 @@ export default function TaskJournal() {
 
   return (
     <div ref={rootRef} style={{ minHeight: "100vh", color: T.ink }}>
-      <Header sync={sync} />
+      <Header sync={sync} onDiagnose={diagnoseSync} />
 
       {/* ===== toolbar: view tabs + new task ===== */}
       <div className="tj-toolbar" style={{
@@ -512,19 +538,19 @@ export default function TaskJournal() {
       }}>
         <nav className="no-scrollbar" style={{
           display: "flex", gap: 2, background: T.surface, border: `1px solid ${T.line}`,
-          borderRadius: 12, padding: 3, overflowX: "auto", maxWidth: "100%", boxShadow: T.shadowSm,
+          borderRadius: 12, padding: 3, overflowX: "auto", maxWidth: "100%", minWidth: 0, boxShadow: T.shadowSm,
         }}>
           {VIEWS.map((v) => {
             const active = view === v.key;
             return (
               <button key={v.key} onClick={() => setView(v.key)} style={{
                 display: "inline-flex", alignItems: "center", gap: 7,
-                background: active ? "linear-gradient(135deg, rgba(37,99,235,0.14), rgba(15,164,126,0.12))" : "transparent",
+                background: active ? `linear-gradient(135deg, ${alpha(T.accentAzure, 20)}, ${alpha(T.accent, 12)})` : "transparent",
                 color: active ? T.ink : T.ink2,
                 border: "none", borderRadius: 9, padding: "8px 14px",
                 fontSize: 13, fontWeight: active ? 700 : 400, cursor: "pointer",
                 whiteSpace: "nowrap", fontFamily: "inherit",
-                boxShadow: active ? `inset 0 0 0 1px ${T.accent}3A` : "none",
+                boxShadow: active ? `inset 0 0 0 1px ${alpha(T.accent, 23)}` : "none",
               }}>
                 <span style={{ color: active ? T.accent : T.ink3, display: "inline-flex" }}>{v.icon(15)}</span>
                 {v.label}
@@ -534,26 +560,6 @@ export default function TaskJournal() {
         </nav>
 
         <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            title="לחיצה מציגה אבחון סנכרון"
-            onClick={() => {
-              const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-              const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-              alert(
-                `אבחון סנכרון\n` +
-                `מצב: ${sync.label}\n` +
-                `כתובת Supabase בבנייה: ${url || "❌ חסרה"}\n` +
-                `מפתח anon בבנייה: ${key ? "✓ קיים (" + key.slice(0, 12) + "…)" : "❌ חסר"}\n` +
-                `שגיאה אחרונה: ${getSyncDetail() || "אין"}`
-              );
-            }}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5,
-              color: sync.color, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 12px",
-              background: "transparent", cursor: "pointer", fontFamily: "inherit",
-            }}>
-            {sync.icon}{sync.label}
-          </button>
           <button onClick={toggleTheme} title={theme === "dark" ? "מעבר למצב בהיר" : "מעבר למצב כהה"} style={{
             display: "inline-flex", alignItems: "center", justifyContent: "center",
             width: 30, height: 30, borderRadius: 99, border: `1px solid ${T.line}`,
@@ -572,15 +578,21 @@ export default function TaskJournal() {
             }}>
             {Ic.bell(13)} {testingPush ? "בודק…" : pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : pushState === "unsupported" ? "התראות — נדרשת התקנה" : "הפעל התראות"}
           </button>
-          <button onClick={createTask} className="tj-newbtn" style={{
+          <button onClick={createTask} className="tj-newbtn tj-sheen" style={{
             display: "inline-flex", alignItems: "center", gap: 9,
             background: T.grad, color: "#fff", border: "none", borderRadius: 99,
             padding: "7px 8px 7px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
             fontFamily: "var(--font-display)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 10px 24px -10px rgba(29,79,215,0.65)",
+            boxShadow: [
+              "inset 0 1px 0 rgba(255,255,255,0.28)",
+              "inset 0 -1px 0 rgba(0,0,0,0.12)",
+              `0 2px 6px -2px ${alpha(T.accent, 50)}`,
+              `0 14px 30px -12px ${alpha(T.accentAzure, 70)}`,
+            ].join(", "),
           }}>
             <span className="tj-newbtn-orb" style={{
-              width: 26, height: 26, borderRadius: 99, background: "rgba(255,255,255,0.18)",
+              width: 26, height: 26, borderRadius: 99, background: "rgba(255,255,255,0.20)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35)",
               display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}>{Ic.plus(14)}</span>
             משימה חדשה
@@ -838,7 +850,10 @@ export default function TaskJournal() {
           {view === "dashboard" && (
             <>
               {/* hero — ברכה אישית + הוספה מהירה */}
-              <section className="tj-card" style={{ ...card, padding: "16px 18px", background: `linear-gradient(135deg, ${T.surface} 60%, ${T.accentSoft})` }}>
+              <section className="tj-card tj-hero-card" style={{
+                ...card, padding: "16px 18px",
+                background: `linear-gradient(135deg, ${T.surface} 48%, ${T.accentSoft} 78%, ${T.accentWash})`,
+              }}>
                 {(() => {
                   const h = today.getHours();
                   const greet = h < 5 ? "לילה טוב" : h < 12 ? "בוקר טוב" : h < 17 ? "צהריים טובים" : h < 22 ? "ערב טוב" : "לילה טוב";
@@ -852,18 +867,12 @@ export default function TaskJournal() {
                   return (
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{
-                          display: "inline-block", fontSize: 9.5, fontWeight: 600, letterSpacing: "0.18em",
-                          color: T.accent, background: T.accentSoft, borderRadius: 99,
-                          padding: "3px 11px", marginBottom: 8,
-                        }}>
-                          סקירה יומית
-                        </span>
-                        <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.025em", lineHeight: 1.1, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.025em", lineHeight: 1.1, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <span>{emoji} {greet}, אופיר</span>
                           {streak >= 2 && (
                             <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
-                              fontSize: 11.5, fontWeight: 700, color: "#C2410C", background: "#FFEDD5",
+                              fontSize: 11.5, fontWeight: 700, color: T.amber,
+                              background: alpha(T.amber, 12), border: `1px solid ${alpha(T.amber, 22)}`,
                               borderRadius: 99, padding: "3px 10px",
                             }}>
                               🔥 רצף {streak} ימים
@@ -958,7 +967,7 @@ export default function TaskJournal() {
                 <section className="tj-card" style={{
                   ...tintCard(T.danger), padding: 16, position: "relative", overflow: "hidden",
                 }}>
-                  <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: `linear-gradient(90deg, ${T.danger}, ${T.danger}66)` }} />
+                  <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: `linear-gradient(90deg, ${T.danger}, ${alpha(T.danger, 40)})` }} />
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
                     <IcChip icon={Ic.flame(16)} color={T.danger} />
                     <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>משימות קריטיות</h2>
@@ -985,14 +994,16 @@ export default function TaskJournal() {
                   <IcChip icon={Ic.layers(16)} color={T.accent} />
                   <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>המשימות שלי</h2>
                   <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: T.accent, background: T.accentSoft, borderRadius: 99, padding: "2px 10px" }}>
-                    {activeCount}
+                    {regularTasks.length}
                   </span>
                 </div>
 
-                {activeCount === 0 ? (
-                  doneTasks.length > 0 ? (
+                {regularTasks.length === 0 ? (
+                  doneTasks.length > 0 || criticalTasks.length > 0 ? (
                     <div style={{ textAlign: "center", padding: "34px 20px", color: T.mint, fontSize: 14, fontWeight: 600 }}>
-                      🎉 כל המשימות הושלמו — כל הכבוד!
+                      {criticalTasks.length > 0
+                        ? "כל מה שנותר נמצא בלוח המשימות הקריטיות למעלה."
+                        : "🎉 כל המשימות הושלמו — כל הכבוד!"}
                     </div>
                   ) : (
                     <Empty filtersActive={filtersActive} onCreate={createTask} />
@@ -1118,23 +1129,26 @@ export default function TaskJournal() {
       )}
 
       <style>{`
-        ::selection { background: rgba(61,126,255,0.4); }
         @media (max-width: 1290px) { .tj-toolbar { margin-inline: 12px !important; } }
         .tj-newbtn:hover .tj-newbtn-orb { transform: rotate(90deg) scale(1.08); }
-        .tj-newbtn-orb { transition: transform .45s cubic-bezier(0.32,0.72,0,1); }
+        .tj-newbtn-orb { transition: transform .45s var(--ease-arrive); }
         .tj-catdel { opacity: 0; transition: opacity .15s; }
         .tj-catrow:hover .tj-catdel { opacity: 0.7; }
         .tj-card { transition: box-shadow .18s, transform .18s, border-color .18s; }
-        input::placeholder, textarea::placeholder { color: #5E7089; }
+        input::placeholder, textarea::placeholder { color: var(--tj-ink3); }
         @media (max-width: 520px) { .tj-synctext { display: none; } }
         @media (max-width: 1180px) {
-          .tj-dash-cols { flex-direction: column !important; }
+          /* אותו דפוס כמו ב-.tj-layout: flex-start בפריסת עמודה מקבע
+             את העמודות לרוחב התוכן שלהן במקום לרוחב המסך */
+          .tj-dash-cols { flex-direction: column !important; align-items: stretch !important; }
           .tj-dash-cal { width: 100% !important; position: static !important; }
         }
         @media (max-width: 900px) {
           .tj-sidebar { display: none; }
           .tj-sidebar-toggle { display: flex !important; }
-          .tj-layout { flex-direction: column; }
+          /* alignItems:flex-start בפריסת עמודה מקבע כל ילד לרוחב התוכן שלו
+             ומגלגל את רוחב הטבלה החוצה אל העמוד כולו — stretch מחזיר אותו למסך */
+          .tj-layout { flex-direction: column; align-items: stretch !important; }
           .tj-layout > aside { width: 100% !important; position: static !important; }
           .tj-catdel { opacity: 0.7; }
           .tj-apply-mobile { display: flex !important; }
@@ -1147,10 +1161,14 @@ export default function TaskJournal() {
           .tj-toolbar { padding: 7px 8px !important; margin: 8px 8px 0 !important; top: 6px !important; }
           .tj-layout { padding: 10px 10px 40px !important; gap: 10px !important; }
           .tj-card { padding: 12px !important; }
-          .tj-kpis { grid-template-columns: repeat(2,1fr) !important; }
+          .tj-kpis { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+          .tj-kpis:has(.tj-kpi-hero) { grid-template-columns: repeat(3,minmax(0,1fr)) !important; }
           .tj-kpi-hero { grid-column: 1 / -1; }
-          .tj-newbtn { flex: 1; justify-content: center; }
-          .tj-calday { min-height: 52px !important; padding: 3px 3px !important; }
+          .tj-kpis:has(.tj-kpi-hero) .tj-kpi-card { padding: 10px 11px !important; gap: 8px !important; }
+          .tj-kpis:has(.tj-kpi-hero) .tj-kpi-card > span { width: 30px !important; height: 30px !important; border-radius: 9px !important; }
+          .tj-kpis:has(.tj-kpi-hero) .tj-kpi-num { font-size: 19px !important; }
+          .tj-newbtn { flex: 1; justify-content: center; white-space: nowrap; }
+          .tj-calday { min-height: 64px !important; padding: 3px 3px !important; }
           .tj-calday button { font-size: 8.5px !important; padding: 1px 3px !important; }
         }
       `}</style>
@@ -1164,26 +1182,30 @@ function filteredCountByCat(tasks: Task[], catId: string): number {
 
 // ============ pieces ============
 
-function Header({ sync }: { sync: { icon: React.ReactNode; label: string; color: string } }) {
+function Header({ sync, onDiagnose }: {
+  sync: { icon: React.ReactNode; label: string; color: string };
+  onDiagnose: () => void;
+}) {
   return (
     <header style={{
       position: "relative",
-      background: "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(247,250,253,0.82))",
+      background: `linear-gradient(180deg, ${T.surface}, ${alpha(T.bg2, 82)})`,
       backdropFilter: "saturate(1.4) blur(8px)",
       borderBottom: `1px solid ${T.line}`,
       padding: "11px 18px", display: "flex", alignItems: "center", gap: 12,
-      boxShadow: "0 1px 0 rgba(255,255,255,0.7) inset, 0 6px 18px -14px rgba(23,43,77,0.5)",
+      boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 6px 18px -14px var(--tj-shadow-strong)",
     }}>
-      <div style={{ position: "absolute", insetInline: 0, bottom: 0, height: 3, background: T.grad, opacity: 0.9 }} />
+      <div style={{ position: "absolute", insetInline: 0, bottom: 0, height: 2, background: T.gradAzure, opacity: 0.85 }} />
       <div style={{
         background: "#fff", borderRadius: 12, padding: "5px 8px", display: "flex", alignItems: "center",
-        border: `1px solid ${T.line}`, boxShadow: T.shadowSm,
+        border: `1px solid ${T.line}`,
+        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px var(--tj-shadow), 0 8px 18px -12px ${alpha(T.accentAzure, 55)}`,
       }}>
         <Image src="/logo-histadrut.svg" alt="ההסתדרות" width={40} height={34}
           style={{ height: 32, width: "auto" }} />
       </div>
       <div style={{ lineHeight: 1.15 }}>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: "#F2554A", letterSpacing: "-0.02em" }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: T.accent, letterSpacing: "-0.02em" }}>
           ההסתדרות
         </div>
         <div style={{ fontSize: 10.5, color: T.ink2, fontWeight: 500 }}>
@@ -1195,21 +1217,21 @@ function Header({ sync }: { sync: { icon: React.ReactNode; label: string; color:
         <div style={{
           fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15.5,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          background: T.grad, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+          color: T.ink, letterSpacing: "-0.02em",
         }}>
           יומן המשימות של אופיר
         </div>
         <div className="num" style={{ fontSize: 10, color: T.ink3, letterSpacing: "0.14em" }}>
-          TASK JOURNAL · V4
+          TASK JOURNAL
         </div>
       </div>
-      <span style={{
+      <button onClick={onDiagnose} title="לחיצה מציגה אבחון סנכרון" style={{
         marginInlineStart: "auto", color: sync.color, display: "inline-flex", alignItems: "center", gap: 6,
         background: T.surface, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 11px",
-        fontSize: 11, fontWeight: 600, boxShadow: T.shadowSm,
-      }} title={sync.label}>
+        fontSize: 11, fontWeight: 600, boxShadow: T.shadowSm, cursor: "pointer", fontFamily: "inherit",
+      }}>
         {sync.icon}<span className="tj-synctext">{sync.label}</span>
-      </span>
+      </button>
     </header>
   );
 }
@@ -1232,9 +1254,9 @@ function IcChip({ icon, color, size = 30 }: { icon: React.ReactNode; color: stri
   return (
     <span style={{
       width: size, height: size, borderRadius: 9, flexShrink: 0,
-      background: `linear-gradient(135deg, ${color}, ${color}C4)`, color: "#fff",
+      background: `linear-gradient(135deg, ${color}, ${alpha(color, 77)})`, color: "#fff",
       display: "inline-flex", alignItems: "center", justifyContent: "center",
-      boxShadow: `0 5px 14px -6px ${color}AA`,
+      boxShadow: `0 5px 14px -6px ${alpha(color, 67)}`,
     }}>{icon}</span>
   );
 }
@@ -1253,7 +1275,7 @@ function NavBtn({ children, onClick }: { children: React.ReactNode; onClick: () 
 function Kpi({ label, value, icon, alert }: { label: string; value: number; icon: React.ReactNode; alert?: boolean }) {
   const c = alert ? T.danger : T.accent;
   return (
-    <div style={{ ...card, padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
+    <div className="tj-kpi-card" style={{ ...card, padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
       <span style={{
         width: 38, height: 38, borderRadius: 11, flexShrink: 0,
         background: alert ? T.dangerSoft : T.accentSoft, color: c,
@@ -1323,10 +1345,14 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
           const row = e.currentTarget.closest("[data-task-row]");
           if (task.status === "in_progress" && row &&
               !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-            gsap.fromTo(row, { scale: 1 },
-              { scale: 1.02, duration: 0.14, yoyo: true, repeat: 1, ease: "power2.out", clearProps: "transform", onComplete: onCycle });
-            gsap.fromTo(row, { boxShadow: "0 0 0 0 rgba(15,164,126,0)" },
-              { boxShadow: "0 0 0 6px rgba(15,164,126,0.30)", duration: 0.14, yoyo: true, repeat: 1, ease: "power1.out", clearProps: "boxShadow" });
+            // גל אור תכלת→מנטה חוצה את השורה, והצל מתעמק ומשתחרר איתו.
+            // הילה ירוקה בלי היסט היא קישוט; זה אירוע שיש לו כיוון ומשך.
+            row.classList.add("tj-completing");
+            gsap.fromTo(row,
+              { boxShadow: `0 1px 2px var(--tj-shadow)` },
+              { boxShadow: `0 10px 26px -12px ${alpha(T.mint, 70)}`,
+                duration: 0.26, yoyo: true, repeat: 1, ease: "expo.out", clearProps: "boxShadow" });
+            window.setTimeout(() => { row.classList.remove("tj-completing"); onCycle(); }, 430);
           } else {
             onCycle();
           }
@@ -1355,8 +1381,8 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
             <Meta color={T.danger}>{Ic.flame(11)} קריטית</Meta>
           )}
           {cat && (
-            <Meta color={cat.color}>
-              <span style={{ width: 7, height: 7, borderRadius: 2.5, background: cat.color }} />
+            <Meta color={T.ink2}>
+              <span style={{ width: 7, height: 7, borderRadius: 2.5, background: cat.color, flexShrink: 0 }} />
               {cat.name}
             </Meta>
           )}
@@ -1420,7 +1446,7 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
         {cells.map((day, i) => {
-          if (day === null) return <div key={i} className="tj-calday" style={{ minHeight: 72, borderRadius: 10 }} />;
+          if (day === null) return <div key={i} className="tj-calday" style={{ minHeight: 86, borderRadius: 10 }} />;
           const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           const dayTasks = items[key] ?? [];
           const isToday = key === todayKey;
@@ -1431,7 +1457,7 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
               className="tj-calday"
               onClick={() => onSelectDate(key)}
               style={{
-                minHeight: 72, borderRadius: 10, padding: "4px 5px", cursor: "pointer",
+                minHeight: 86, borderRadius: 10, padding: "4px 5px", cursor: "pointer",
                 background: isSelected ? T.mintSoft : T.bg2,
                 border: `1px solid ${isSelected ? `${alpha(T.mint, 40)}` : isToday ? T.accent : "transparent"}`,
                 display: "flex", flexDirection: "column", gap: 3, overflow: "hidden",
@@ -1452,11 +1478,13 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
                     onClick={(e) => { e.stopPropagation(); onOpenTask(t.id); }}
                     title={t.title}
                     style={{
-                      display: "block", width: "100%", textAlign: "start",
-                      background: `${col}26`, color: mixToInk(col), border: "none",
+                      width: "100%", textAlign: "start",
+                      background: alpha(col, 15), color: mixToInk(col), border: "none",
                       borderInlineStart: `2.5px solid ${col}`,
                       borderRadius: 5, padding: "2px 5px", fontSize: 9.5, fontWeight: 500,
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      lineHeight: 1.25, overflow: "hidden",
+                      display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                      overflowWrap: "anywhere",
                       cursor: "pointer", fontFamily: "inherit",
                       textDecoration: isDone(t) ? "line-through" : "none",
                     }}

@@ -15,18 +15,28 @@ export const T = {
   ink: "var(--tj-ink)",
   ink2: "var(--tj-ink2)",
   ink3: "var(--tj-ink3)",
+  // accent נושא טקסט ואייקונים; bright/azure צובעים שטח, זוהר וגרפים.
+  // התכלת לבדה מגיעה ל-2.16:1 על לבן ולכן לעולם לא נושאת טקסט.
   accent: "var(--tj-accent)",
   accentSoft: "var(--tj-accent-soft)",
+  accentBright: "var(--tj-accent-bright)",
+  accentAzure: "var(--tj-accent-azure)",
+  accentWash: "var(--tj-accent-wash)",
   mint: "var(--tj-mint)",
   mintSoft: "var(--tj-mint-soft)",
-  // רמפה חד-גונית של כחול המותג — לא "גרדיאנט AI" כחול-סגול
-  grad: "linear-gradient(135deg,#3B82F6 0%,#1D4FD7 100%)",
+  // רמפת הלוגו של ההסתדרות. grad נושא טקסט לבן ולכן עוצר בכחול הביניים
+  // (לבן על ‎#1A72B8 = 5.07:1); gradAzure מצייר שטח בלבד.
+  grad: "linear-gradient(135deg,#1A72B8 0%,#0F4C97 100%)",
+  gradAzure: "linear-gradient(135deg,#4FC1F0 0%,#1187C9 55%,#0F4C97 100%)",
+  brand: ["#0F4C97", "#1187C9", "#35BDF2", "#4FC1F0", "#9BDCF8"],
   danger: "var(--tj-danger)",
   dangerSoft: "var(--tj-danger-soft)",
   amber: "var(--tj-amber)",
+  specular: "var(--tj-specular)",
   shadowSm: "0 1px 2px var(--tj-shadow)",
   shadowMd: "0 1px 2px var(--tj-shadow), 0 10px 28px -14px var(--tj-shadow)",
   shadowLg: "0 24px 70px var(--tj-shadow)",
+  ease: "var(--ease-arrive)",
   r: 14,
 };
 
@@ -35,20 +45,34 @@ export function alpha(color: string, pct: number): string {
   return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 }
 
-// Double-Bezel: קו-שיער חיצוני + הדגשת-אור פנימית עליונה + צל אמביינטי רך ומפוזר
+// משטח מואר מלמעלה: הדגשת-אור בקצה העליון, קצה תחתון כהה שמסגיר עובי,
+// צל מגע צמוד, וצל אמביינטי רחב. ארבע השכבות יחד הן מה שהופך מלבן לחומר.
 export const card: React.CSSProperties = {
   background: T.surface,
   border: `1px solid ${T.line}`,
   borderRadius: 18,
-  boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 1px 2px var(--tj-shadow), 0 24px 48px -28px var(--tj-shadow-strong)",
+  boxShadow: [
+    "inset 0 1px 0 var(--tj-bezel)",
+    "inset 0 -1px 0 var(--tj-bezel-low)",
+    "0 1px 2px var(--tj-shadow)",
+    "0 24px 48px -28px var(--tj-shadow-strong)",
+  ].join(", "),
+};
+
+// משטח שקוע — תעלה שגרף או פס התקדמות יושב בתוכה
+export const well: React.CSSProperties = {
+  background: T.surface2,
+  boxShadow: "inset 0 1px 3px var(--tj-bezel-low), inset 0 -1px 0 var(--tj-bezel)",
 };
 
 // כרטיס מדד עם גוון צבע עדין ומסגרת תואמת — שומר על תמיכה בבהיר/כהה
 export function tintCard(color: string): React.CSSProperties {
   return {
     ...card,
-    background: `linear-gradient(180deg, ${alpha(color, 12)} 0%, ${alpha(color, 5)} 30%, ${T.surface} 72%)`,
-    border: `1px solid ${alpha(color, 26)}`,
+    // מרוסן יותר מבעבר: בעולם תכלת-לבן, גוון סמנטי חזק מדי הופך לרעש.
+    // הסימון נשען על הפס העליון, על התגית ועל רצועות הצד.
+    background: `linear-gradient(180deg, ${alpha(color, 9)} 0%, ${alpha(color, 4)} 32%, ${T.surface} 74%)`,
+    border: `1px solid ${alpha(color, 20)}`,
   };
 }
 

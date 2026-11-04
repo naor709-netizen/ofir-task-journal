@@ -31,7 +31,7 @@ export const PERSON_COLORS: Record<PersonColor, { label: string; a: string; b: s
 
 export const MEMBER_COLOR_ORDER: PersonColor[] = ["teal", "orange", "fuchsia", "rose", "violet", "blue"];
 
-// צבע אדם כטוקן CSS — מתחלף לבד בין בהיר לכהה (מוגדר ב-globals.css)
+// צבע אדם כטוקן CSS — מתחלף לבד בין בהיר לכהה (מוגדר ב-src/app/global-css.ts)
 export function personVar(c: PersonColor): string {
   return `var(--p-${c})`;
 }

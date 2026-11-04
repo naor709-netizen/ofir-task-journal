@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import "./globals.css";
+import { GLOBAL_CSS } from "./global-css";
 import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
@@ -26,6 +26,8 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl">
       <body>
+        {/* העיצוב משובץ בדף עצמו — לא תלוי בהורדת קובץ CSS נפרד (ראו global-css.ts) */}
+        <style id="tj-global" dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         {/* קובע את ערכת הנושא לפני הציור הראשון (מונע הבזק לבן במצב כהה),

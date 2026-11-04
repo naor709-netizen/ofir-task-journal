@@ -7,7 +7,7 @@ import { PERSON_COLORS, personVar, type PersonColor } from "@/lib/journals";
 // יומן המשימות — טוקנים, פרימיטיבים וסט אייקונים
 // ============================================
 
-// טוקנים כ-CSS variables — הערכים (בהיר/כהה, וגוון אישי לכל יומן) מוגדרים ב-globals.css
+// טוקנים כ-CSS variables — הערכים (בהיר/כהה, וגוון אישי לכל יומן) מוגדרים ב-src/app/global-css.ts
 export const T = {
   bg: "var(--tj-bg)",
   bg2: "var(--tj-bg2)",

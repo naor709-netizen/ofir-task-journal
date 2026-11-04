@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireEnv, db, flatten, notifyJournal, escHtml, appUrl, type Task } from "@/lib/server/automation";
 import { tgConfigured } from "@/lib/server/telegram";
+import { smsConfigured, smsText } from "@/lib/server/sms";
 import { journalOfPayload, journalPath } from "@/lib/journals";
 
 export const runtime = "nodejs";
@@ -14,6 +15,7 @@ export async function GET() {
     cronSecret: !!process.env.CRON_SECRET,
     supabase: !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     telegram: tgConfigured(),
+    sms: smsConfigured(),
   });
 }
 
@@ -65,6 +67,7 @@ export async function POST(req: Request) {
   // 3. מסירה ליומן של כל תזכורת: פוש למכשירים שלו + טלגרם עם כפתורי פעולה
   let pushed = 0;
   let telegram = 0;
+  let sms = 0;
   for (const rem of toSend) {
     // רושמים לפני השליחה — כשל באמצע לא יגרום להצפה בדקה הבאה
     await sb.from("reminders_sent").upsert({ reminder_id: rem.reminderId }, { onConflict: "reminder_id" });
@@ -79,6 +82,7 @@ export async function POST(req: Request) {
       sb, rem.journalId,
       { title, body, tag: rem.reminderId, url: journalPath(rem.journalId) },
       {
+        sms: smsText(`⏰ ${title}`, body !== "תזכורת מהיומן" ? body : rem.task.critical ? "קריטית" : ""),
         telegram: {
           html,
           buttons: [
@@ -93,7 +97,8 @@ export async function POST(req: Request) {
     );
     pushed += out.pushed;
     if (out.telegram === "sent") telegram++;
+    if (out.sms === "sent") sms++;
   }
 
-  return NextResponse.json({ sent: pushed + telegram, pushed, telegram, reminders: toSend.length });
+  return NextResponse.json({ sent: pushed + telegram + sms, pushed, sms, telegram, reminders: toSend.length });
 }

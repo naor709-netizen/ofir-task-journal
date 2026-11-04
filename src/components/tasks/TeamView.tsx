@@ -111,6 +111,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
   }, [people, data.journals, todayKey]);
 
   const members = useMemo(() => people.filter((p) => !p.isManager), [people]);
+  const managerSms = meta.sms[MANAGER_ID] ?? null;
   const teamOpen = members.reduce((n, p) => n + stats[p.id].open.length, 0);
   const teamDoneWeek = members.reduce((n, p) => n + stats[p.id].doneWeek.length, 0);
   const teamOverdue = members.reduce((n, p) => n + stats[p.id].overdue.length, 0);
@@ -208,7 +209,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
       </section>
 
       {noMembers ? (
-        <Onboarding onAdd={() => setAdding(true)} onNotify={onOpenNotify} telegramLinked={!!meta.telegram[MANAGER_ID]} />
+        <Onboarding onAdd={() => setAdding(true)} onNotify={onOpenNotify} phoneLinked={!!meta.sms[MANAGER_ID] || !!meta.telegram[MANAGER_ID]} />
       ) : (
         <>
           {/* ===== כרטיסי אנשים ===== */}
@@ -217,7 +218,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
               ? people.map((p) => <div key={p.id} className="tj-skel" style={{ height: 228 }} />)
               : people.map((p) => (
                 <PersonCard key={p.id} p={p} s={stats[p.id]} todayKey={todayKey}
-                  telegram={!!meta.telegram[p.id]}
+                  channel={meta.sms[p.id] ? "sms" : meta.telegram[p.id] ? "telegram" : null}
                   onAssign={() => setAssignTo(p.id)}
                   onEdit={() => { const m = meta.roster.members.find((x) => x.id === p.id); if (m) setEditing(m); }}
                   onShare={() => { const m = meta.roster.members.find((x) => x.id === p.id); if (m) setShareFor(m); }}
@@ -329,16 +330,16 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
                 <Head icon={Ic.sliders(15)} title="עדכונים ופרטיות" />
                 <button onClick={onOpenNotify} style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "start",
-                  background: meta.telegram[MANAGER_ID] ? T.mintSoft : T.accentSoft, border: "none", borderRadius: 14,
+                  background: managerSms ? T.mintSoft : T.accentSoft, border: "none", borderRadius: 14,
                   padding: "11px 12px", cursor: "pointer", fontFamily: "inherit", marginBottom: 12,
                 }}>
-                  <span style={{ color: meta.telegram[MANAGER_ID] ? T.mint : T.accent, display: "inline-flex" }}>{Ic.send(17)}</span>
+                  <span style={{ color: managerSms ? T.mint : T.accent, display: "inline-flex" }}>{Ic.phone(17)}</span>
                   <span style={{ flex: 1 }}>
                     <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
-                      {meta.telegram[MANAGER_ID] ? "טלגרם מחובר לטלפון שלך" : "חיבור טלגרם לטלפון שלך"}
+                      {managerSms ? <>SMS לטלפון שלך · <span className="num" style={{ direction: "ltr", display: "inline-block" }}>{managerSms.mask}</span></> : "חיבור הטלפון שלך ל-SMS"}
                     </span>
                     <span style={{ display: "block", fontSize: 11.5, color: T.ink2 }}>
-                      {meta.telegram[MANAGER_ID] ? "עדכוני הצוות מגיעים לשם, כולל כפתורי פעולה" : "כך תדע מיד כשמישהו בצוות מסיים או מוסיף משימה"}
+                      {managerSms ? "תזכורות ועדכוני הצוות מגיעים בהודעה רגילה" : "כך תדע מיד כשמישהו בצוות מסיים או מוסיף משימה"}
                     </span>
                   </span>
                   {Ic.chevL(14)}
@@ -388,7 +389,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
           onClose={() => setAssignTo(null)}
           onAssigned={(p, t) => {
             setAssignTo(null);
-            toast(`נשלח ל${p.name}: ${t.title}${meta.telegram[p.id] ? " · יקבל/תקבל עדכון בטלגרם" : ""}`, "success");
+            toast(`נשלח ל${p.name}: ${t.title}${meta.sms[p.id] ? " · יישלח גם SMS" : meta.telegram[p.id] ? " · יישלח גם בטלגרם" : ""}`, "success");
           }}
         />
       )}
@@ -542,8 +543,8 @@ function DeviceLockRows() {
   );
 }
 
-function PersonCard({ p, s, todayKey, telegram, onAssign, onEdit, onShare }: {
-  p: Person; s: PersonStats; todayKey: string; telegram: boolean;
+function PersonCard({ p, s, todayKey, channel, onAssign, onEdit, onShare }: {
+  p: Person; s: PersonStats; todayKey: string; channel: "sms" | "telegram" | null;
   onAssign: () => void; onEdit: () => void; onShare: () => void;
 }) {
   const tilt = useTilt<HTMLDivElement>(4);
@@ -566,8 +567,8 @@ function PersonCard({ p, s, todayKey, telegram, onAssign, onEdit, onShare }: {
             <div style={{ fontSize: 11.5, color: T.ink3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               {p.isManager ? "היומן שלך" : p.role || "איש צוות"}
               <span>·</span>
-              <span title={telegram ? "מחובר לטלגרם" : "לא מחובר לטלגרם"} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: telegram ? T.mint : T.ink3 }}>
-                {Ic.send(10)} {telegram ? "טלגרם" : "ללא טלגרם"}
+              <span title={channel ? "מקבל/ת עדכונים לטלפון" : "עוד לא חובר טלפון לעדכונים"} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: channel ? T.mint : T.ink3 }}>
+                {Ic.phone(10)} {channel === "sms" ? "SMS" : channel === "telegram" ? "טלגרם" : "בלי עדכונים לטלפון"}
               </span>
             </div>
           </div>
@@ -724,12 +725,12 @@ function PaceChart({ people, stats, todayKey }: { people: Person[]; stats: Recor
   );
 }
 
-function Onboarding({ onAdd, onNotify, telegramLinked }: { onAdd: () => void; onNotify: () => void; telegramLinked: boolean }) {
+function Onboarding({ onAdd, onNotify, phoneLinked }: { onAdd: () => void; onNotify: () => void; phoneLinked: boolean }) {
   const steps = [
     { icon: Ic.userPlus(18), title: "מוסיפים איש צוות", text: "שם וצבע — ונוצר יומן מלא משלו, עם כל היכולות שיש לך." },
-    { icon: Ic.share(18), title: "שולחים את הקישור", text: "בוואטסאפ או בהעתקה. מוסיפים למסך הבית ומחברים טלגרם." },
+    { icon: Ic.share(18), title: "שולחים את הקישור", text: "בוואטסאפ או בהעתקה. מוסיפים למסך הבית ומזינים מספר טלפון ל-SMS." },
     { icon: Ic.users(18), title: "רואים את כולם כאן", text: "מה פתוח, מה באיחור, מה הושלם — ומקצים משימות בלחיצה." },
-    { icon: Ic.phone(18), title: "עדכון ישר לטלפון", text: "כשמישהו בצוות מסיים או מוסיף משימה — הודעה מיידית בטלגרם." },
+    { icon: Ic.phone(18), title: "עדכון ישר לטלפון", text: "כשמישהו בצוות מסיים או מוסיף משימה — SMS מיידי לטלפון שלך." },
   ];
   return (
     <section className="tj-card" style={{ ...card, padding: "22px 20px" }}>
@@ -747,7 +748,7 @@ function Onboarding({ onAdd, onNotify, telegramLinked }: { onAdd: () => void; on
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
         <button onClick={onAdd} style={{ ...primaryBtn, height: 44 }}>{Ic.userPlus(15)} הוספת איש צוות ראשון</button>
-        {!telegramLinked && <button onClick={onNotify} style={{ ...softBtn, height: 44, padding: "0 16px" }}>{Ic.send(13)} קודם, חיבור טלגרם לטלפון שלי</button>}
+        {!phoneLinked && <button onClick={onNotify} style={{ ...softBtn, height: 44, padding: "0 16px" }}>{Ic.phone(13)} קודם, חיבור הטלפון שלי ל-SMS</button>}
       </div>
       <style>{`@media (max-width: 900px) { .tj-onboard { grid-template-columns: 1fr 1fr !important; } } @media (max-width: 520px) { .tj-onboard { grid-template-columns: 1fr !important; } }`}</style>
     </section>
@@ -864,7 +865,7 @@ function ShareDialog({ member, onClose }: { member: TeamMember; onClose: () => v
     `זה יומן המשימות שלך: ${url}`,
     "",
     "כדאי: להוסיף אותו למסך הבית (שיתוף ← הוספה למסך הבית),",
-    "ולחבר טלגרם מתוך היומן (כפתור הפעמון) — כך תזכורות ומשימות חדשות יגיעו ישר לטלפון.",
+    "ולהזין מספר טלפון בכפתור הפעמון — כך תזכורות ומשימות חדשות יגיעו ב-SMS.",
   ].join("\n");
   async function copy() {
     try { await navigator.clipboard.writeText(url); toast("הקישור הועתק", "success"); }

@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useToast } from "@/components/Toast";
 import {
-  enablePush, diagnosePush, sendTestPush, telegramStatus, telegramAction,
-  type PushDiag, type TelegramStatus,
+  enablePush, diagnosePush, sendTestPush, telegramStatus, telegramAction, smsStatus, smsAction,
+  type PushDiag, type TelegramStatus, type SmsStatus,
 } from "@/lib/push";
 import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta } from "@/lib/team";
 import { MANAGER_ID, MANAGER_NAME } from "@/lib/journals";
-import { T, alpha, Ic, Sheet, primaryBtn, ghostBtn, softBtn } from "./ui";
+import { T, alpha, Ic, Sheet, primaryBtn, ghostBtn, softBtn, inputStyle } from "./ui";
 
 type PushState = "unsupported" | "off" | "on" | "denied";
 
-// מרכז העדכונים: טלגרם (הערוץ האמין) + התראות דפדפן + אבחון מלא
+// מרכז העדכונים: SMS (הודעה רגילה לטלפון) + טלגרם (אם הוגדר) + התראות דפדפן + אבחון מלא
 export function NotifyCenter({ journalId, personName, pushState, setPushState, onClose }: {
   journalId: string;
   personName: string;
@@ -27,6 +27,7 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
   const [linking, setLinking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [diag, setDiag] = useState<{ d: PushDiag; at: number } | null>(null);
+  const [sms, setSms] = useState<SmsStatus | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refreshTg = useCallback(async () => {
@@ -110,10 +111,10 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
     const r = await sendTestPush(journalId);
     setBusy(null);
     if (r.ok) {
-      const parts = [r.pushed ? `${r.pushed} מכשירים` : "", r.telegram === "sent" ? "טלגרם" : ""].filter(Boolean).join(" + ");
-      toast(`התראת בדיקה נשלחה (${parts}) — אמורה להגיע תוך שניות`, "success");
+      const parts = [r.sms === "sent" ? "SMS" : "", r.pushed ? `${r.pushed} מכשירים` : "", r.telegram === "sent" ? "טלגרם" : ""].filter(Boolean).join(" + ");
+      toast(`הודעת בדיקה נשלחה (${parts}) — אמורה להגיע תוך שניות`, "success");
     } else {
-      toast(r.reason === "no-subscriptions" ? "אין לאן לשלוח — חברו טלגרם או הפעילו התראות" : `השליחה נכשלה (${r.reason ?? ""})`, "error");
+      toast(r.reason === "no-subscriptions" ? "אין לאן לשלוח — חברו מספר טלפון ל-SMS" : `השליחה נכשלה (${r.reason ?? ""})`, "error");
     }
   }
 
@@ -129,20 +130,18 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
           : `תזכורות, בריף בוקר ומשימות ש${MANAGER_NAME} שולח — ישר לטלפון, גם כשהיומן סגור.`}
       </p>
 
-      {/* ---- טלגרם ---- */}
+      {/* ---- SMS: הודעה רגילה לטלפון ---- */}
+      <SmsChannel journalId={journalId} isManager={isManager} liveMask={meta.sms[journalId]?.mask ?? null} onStatus={setSms} />
+
+      {/* ---- טלגרם: מוצג רק אם הבוט הוגדר בשרת ---- */}
+      {tg?.configured && (
       <Channel
         icon={Ic.send(18)}
         title="טלגרם"
-        badge={linked ? { text: "מחובר", tone: "ok" } : { text: "מומלץ", tone: "accent" }}
-        subtitle="הדרך האמינה ביותר: עובד בכל טלפון, מגיע מיד, וכולל כפתורי ״בוצע״ ו״עוד שעה״ ישר מההתראה."
+        badge={linked ? { text: "מחובר", tone: "ok" } : undefined}
+        subtitle="ערוץ נוסף, לא חובה: הודעות בטלגרם עם כפתורי ״בוצע״ ו״עוד שעה״."
       >
-        {tg === null ? (
-          <div className="tj-skel" style={{ height: 44, borderRadius: 12 }} />
-        ) : !tg.configured ? (
-          isManager ? <TelegramSetupSteps /> : (
-            <Note tone="amber">הבוט של היומן עדיין לא הופעל. {MANAGER_NAME} צריך להפעיל אותו פעם אחת — ואז אפשר לחבר כאן בלחיצה.</Note>
-          )
-        ) : tg.webhook === "preview-skip" ? (
+        {tg.webhook === "preview-skip" ? (
           <Note tone="amber">זו כתובת בדיקה (preview). את טלגרם מחברים מהכתובת הראשית של היומן.</Note>
         ) : linked ? (
           <div>
@@ -184,6 +183,7 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
           </div>
         )}
       </Channel>
+      )}
 
       {/* ---- התראות דפדפן ---- */}
       <Channel
@@ -212,15 +212,197 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
       {/* ---- בדיקה ואבחון ---- */}
       <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
         <button onClick={testAll} disabled={!!busy} style={{ ...softBtn, flex: 1, height: 40 }}>
-          {Ic.send(13)} {busy === "test" ? "שולח…" : "שליחת התראת בדיקה"}
+          {Ic.send(13)} {busy === "test" ? "שולח…" : "שליחת בדיקה"}
         </button>
         <button onClick={runDiag} disabled={!!busy} style={{ ...ghostBtn, flex: 1, height: 40 }}>
           {Ic.activity(13)} {busy === "diag" ? "בודק…" : "אבחון מלא"}
         </button>
       </div>
 
-      {diag && <DiagList d={diag.d} now={diag.at} telegram={tg} linked={!!linked} personName={personName} />}
+      {diag && <DiagList d={diag.d} now={diag.at} telegram={tg} linked={!!linked} sms={sms} personName={personName} />}
     </Sheet>
+  );
+}
+
+// ---- SMS: מספר טלפון + קוד אימות בן 6 ספרות ----
+function SmsChannel({ journalId, isManager, liveMask, onStatus }: {
+  journalId: string;
+  isManager: boolean;
+  liveMask: string | null;
+  onStatus: (s: SmsStatus) => void;
+}) {
+  const { toast } = useToast();
+  const [st, setSt] = useState<SmsStatus | null>(null);
+  const [stage, setStage] = useState<"phone" | "code" | null>(null);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    smsStatus(journalId).then((s) => {
+      if (cancelled) return;
+      setSt(s);
+      onStatus(s);
+      if (s.pending && !s.linked) { setStage("code"); setSentTo(s.pending.mask); }
+    });
+    return () => { cancelled = true; };
+  }, [journalId, onStatus]);
+
+  async function refresh() {
+    const s = await smsStatus(journalId);
+    setSt(s);
+    onStatus(s);
+  }
+
+  async function sendCode() {
+    setErr(null);
+    setBusy("start");
+    const r = await smsAction(journalId, "start", { phone });
+    setBusy(null);
+    if (r.ok) { setStage("code"); setSentTo(r.mask ?? null); setCode(""); return; }
+    setErr(r.error === "too-soon" ? `אפשר לשלוח קוד חדש בעוד ${r.wait ?? 45} שניות` : r.hint ?? `השליחה נכשלה (${r.error ?? ""})`);
+  }
+
+  async function verify(c = code) {
+    if (c.replace(/\D/g, "").length !== 6) return;
+    setErr(null);
+    setBusy("verify");
+    const r = await smsAction(journalId, "verify", { code: c });
+    setBusy(null);
+    if (r.ok) {
+      setStage(null);
+      setCode("");
+      await refresh();
+      toast("המספר אומת — העדכונים יגיעו ב-SMS", "success");
+      return;
+    }
+    setErr(r.error === "wrong-code" ? `הקוד שגוי${r.left !== undefined ? ` · נותרו ${r.left} ניסיונות` : ""}` : r.hint ?? "האימות נכשל");
+    if (r.error === "expired" || r.error === "locked") setStage("phone");
+  }
+
+  async function test() {
+    setBusy("test");
+    const r = await smsAction(journalId, "test");
+    setBusy(null);
+    if (r.ok) toast("נשלח SMS לבדיקה", "success");
+    else toast(r.error === "too-soon" ? "אפשר לשלוח בדיקה פעם בדקה" : r.hint ?? "השליחה נכשלה", "error");
+  }
+
+  async function unlink() {
+    if (!confirm("להפסיק לקבל עדכונים ב-SMS למספר הזה?")) return;
+    setBusy("unlink");
+    await smsAction(journalId, "unlink");
+    setBusy(null);
+    await refresh();
+  }
+
+  const linked = st?.linked ?? null;
+  const mask = linked?.mask ?? liveMask;
+  const showLinked = !!linked && linked.readable && stage === null;
+
+  return (
+    <Channel
+      icon={Ic.phone(18)}
+      title="הודעות SMS"
+      badge={showLinked ? { text: "מחובר", tone: "ok" } : { text: "מומלץ", tone: "accent" }}
+      subtitle="הודעה רגילה לטלפון, באפליקציית ההודעות. בלי התקנה, עובד בכל טלפון."
+    >
+      {st === null ? (
+        <div className="tj-skel" style={{ height: 44, borderRadius: 12 }} />
+      ) : !st.configured ? (
+        isManager ? <TwilioSetupSteps /> : (
+          <Note tone="amber">שליחת SMS עדיין לא הופעלה ביומן. {MANAGER_NAME} צריך להפעיל אותה פעם אחת — ואז מזינים כאן מספר טלפון.</Note>
+        )
+      ) : showLinked ? (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 13, background: T.mintSoft, color: T.mint, fontSize: 13, fontWeight: 600 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path className="tj-check-draw" d="m5 12.5 4.5 4.5L19 7.5" />
+            </svg>
+            <span>מחובר</span>
+            <span className="num" style={{ color: T.ink, direction: "ltr" }}>{mask}</span>
+            <span className="num" style={{ marginInlineStart: "auto", fontSize: 10.5, color: T.ink3, fontWeight: 500 }}>
+              מאז {new Date(linked!.linkedAt).toLocaleDateString("he-IL")}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button onClick={test} disabled={!!busy} style={softBtn}>{Ic.send(12)} {busy === "test" ? "שולח…" : "שליחת SMS לבדיקה"}</button>
+            <button onClick={() => { setStage("phone"); setPhone(""); }} disabled={!!busy} style={ghostBtn}>החלפת מספר</button>
+            <button onClick={unlink} disabled={!!busy} style={ghostBtn}>ניתוק</button>
+          </div>
+        </div>
+      ) : stage === "code" ? (
+        <div>
+          <div style={{ fontSize: 12.5, color: T.ink2, marginBottom: 8 }}>
+            שלחנו קוד בן 6 ספרות ל-<b className="num" style={{ direction: "ltr", display: "inline-block" }}>{sentTo ?? ""}</b>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={code} autoFocus aria-label="קוד אימות"
+              inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="••••••"
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+                setCode(v);
+                if (v.length === 6) verify(v);
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") verify(); }}
+              className="num"
+              style={{ ...inputStyle, flex: 1, height: 46, fontSize: 20, letterSpacing: "0.4em", textAlign: "center", direction: "ltr" }}
+            />
+            <button onClick={() => verify()} disabled={busy === "verify" || code.length !== 6} style={{
+              ...primaryBtn, borderRadius: 14, height: 46, padding: "0 18px",
+              ...(code.length === 6 ? {} : { background: T.surface2, color: T.ink3, boxShadow: "none" }),
+            }}>{busy === "verify" ? "בודק…" : "אישור"}</button>
+          </div>
+          {err && <div role="alert" style={{ color: T.danger, fontSize: 12, marginTop: 8, lineHeight: 1.5 }}>{err}</div>}
+          <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
+            <button onClick={() => { setStage("phone"); setErr(null); }} style={{ ...ghostBtn, border: "none", padding: 0 }}>שינוי המספר</button>
+            <button onClick={sendCode} disabled={!!busy || !phone} style={{ ...ghostBtn, border: "none", padding: 0, opacity: phone ? 1 : 0.5 }}>שליחה חוזרת</button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          {linked && !linked.readable && (
+            <Note tone="amber">המספר שנשמר כבר לא ניתן לפענוח (סוד השרת הוחלף). הזינו אותו שוב.</Note>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: linked && !linked.readable ? 10 : 0 }}>
+            <input
+              value={phone} onChange={(e) => { setPhone(e.target.value); setErr(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && phone.trim()) sendCode(); }}
+              type="tel" inputMode="tel" autoComplete="tel" aria-label="מספר טלפון נייד" placeholder="050-1234567"
+              className="num"
+              style={{ ...inputStyle, flex: 1, height: 46, fontSize: 16, direction: "ltr", textAlign: "right" }}
+            />
+            <button onClick={sendCode} disabled={busy === "start" || !phone.trim()} style={{
+              ...primaryBtn, borderRadius: 14, height: 46, padding: "0 16px",
+              ...(phone.trim() ? {} : { background: T.surface2, color: T.ink3, boxShadow: "none" }),
+            }}>{busy === "start" ? "שולח…" : "שליחת קוד"}</button>
+          </div>
+          {err && <div role="alert" style={{ color: T.danger, fontSize: 12, marginTop: 8, lineHeight: 1.5 }}>{err}</div>}
+          <p style={{ margin: "10px 0 0", fontSize: 11.5, color: T.ink3, lineHeight: 1.6 }}>
+            נשלח קוד אימות ב-SMS כדי לוודא שהמספר נכון. המספר נשמר מוצפן ומוצג רק כ-<span className="num" style={{ direction: "ltr", display: "inline-block" }}>050-•••-1234</span>.
+          </p>
+        </div>
+      )}
+    </Channel>
+  );
+}
+
+function TwilioSetupSteps() {
+  return (
+    <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.7 }}>
+      <Note tone="amber">שליחת SMS עוד לא הוגדרה. זה חד-פעמי, כ-5 דקות:</Note>
+      <ol style={{ margin: "10px 0 0", paddingInlineStart: 18 }}>
+        <li>נרשמים ב-<a href="https://www.twilio.com/try-twilio" target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>twilio.com</a> ומעתיקים מה-Console את <code className="num">Account SID</code> ו-<code className="num">Auth Token</code>.</li>
+        <li>ב-Messaging → Settings → Geo permissions מסמנים את <b>ישראל</b>.</li>
+        <li>קונים מספר שולח, או משתמשים בשם שולח באותיות לועזיות (למשל <code className="num">Yoman</code>).</li>
+        <li>ב-Vercel → Environment Variables מוסיפים <code className="num">TWILIO_ACCOUNT_SID</code>, <code className="num">TWILIO_AUTH_TOKEN</code>, <code className="num">TWILIO_FROM</code>, ופורסים מחדש.</li>
+        <li>חוזרים לכאן ומזינים מספר טלפון.</li>
+      </ol>
+    </div>
   );
 }
 
@@ -256,26 +438,13 @@ function Note({ tone, children }: { tone: "ok" | "amber" | "danger"; children: R
   );
 }
 
-function TelegramSetupSteps() {
-  return (
-    <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.7 }}>
-      <Note tone="amber">הבוט עוד לא הוגדר. זה חד-פעמי, לוקח כ-2 דקות:</Note>
-      <ol style={{ margin: "10px 0 0", paddingInlineStart: 18 }}>
-        <li>בטלגרם, פותחים את <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>@BotFather</a> ושולחים <code className="num">/newbot</code>.</li>
-        <li>בוחרים שם (למשל ״היומן של אופיר״) ושם משתמש שמסתיים ב-<code className="num">bot</code>.</li>
-        <li>מעתיקים את הטוקן שמתקבל.</li>
-        <li>ב-Vercel → Settings → Environment Variables מוסיפים <code className="num">TELEGRAM_BOT_TOKEN</code> עם הטוקן, ופורסים מחדש.</li>
-        <li>חוזרים לכאן ולוחצים ״חיבור טלגרם״.</li>
-      </ol>
-    </div>
-  );
-}
-
-function DiagList({ d, now, telegram, linked, personName }: { d: PushDiag; now: number; telegram: TelegramStatus | null; linked: boolean; personName: string }) {
+function DiagList({ d, now, telegram, linked, sms, personName }: { d: PushDiag; now: number; telegram: TelegramStatus | null; linked: boolean; sms: SmsStatus | null; personName: string }) {
+  const smsLinked = !!sms?.linked?.readable;
   const hbAgeMin = d.heartbeatAt ? Math.round((now - new Date(d.heartbeatAt).getTime()) / 60000) : null;
   const rows: { label: string; ok: boolean | null; detail?: string }[] = [
-    { label: "טלגרם מוגדר בשרת", ok: !!telegram?.configured, detail: telegram?.configured ? undefined : "חסר TELEGRAM_BOT_TOKEN ב-Vercel" },
-    { label: `טלגרם מחובר ליומן של ${personName}`, ok: linked },
+    { label: "SMS מוגדר בשרת (Twilio)", ok: !!sms?.configured, detail: sms?.configured ? undefined : "חסרים TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM ב-Vercel" },
+    { label: `מספר טלפון מחובר ליומן של ${personName}`, ok: smsLinked, detail: sms?.linked ? (sms.linked.readable ? sms.linked.mask : "צריך לחבר את המספר מחדש") : undefined },
+    ...(telegram?.configured ? [{ label: `טלגרם מחובר ליומן של ${personName}`, ok: linked as boolean | null }] : []),
     { label: "הרשאת התראות בדפדפן", ok: d.permission === "granted" ? true : d.permission === "default" ? null : false, detail: d.permission === "denied" ? "נדחתה" : d.permission === "unsupported" ? "לא נתמך" : d.permission === "default" ? "טרם התבקשה" : undefined },
     { label: "המכשיר הזה רשום להתראות", ok: d.deviceSubscribed },
     { label: "הרישום של המכשיר קיים בענן", ok: d.deviceInCloud, detail: d.deviceInCloud === false ? "נמחק — לחיצה על ״הפעלת התראות״ תרשום מחדש" : undefined },
@@ -287,9 +456,11 @@ function DiagList({ d, now, telegram, linked, personName }: { d: PushDiag; now: 
   ];
 
   let verdict = "הכול תקין: עדכונים יגיעו לטלפון גם כשהיומן סגור.";
-  if (!linked && !(d.deviceSubscribed && d.permission === "granted")) verdict = "אין עדיין ערוץ לטלפון — הכי פשוט לחבר טלגרם למעלה.";
+  if (!smsLinked && !linked && !(d.deviceSubscribed && d.permission === "granted")) verdict = sms?.configured
+    ? "אין עדיין ערוץ לטלפון — הכי פשוט להזין מספר טלפון ל-SMS למעלה."
+    : "אין עדיין ערוץ לטלפון. יש להגדיר את Twilio ב-Vercel (README) ואז להזין מספר טלפון.";
   else if (hbAgeMin === null || hbAgeMin > 3) verdict = "שרת התזכורות לא רץ: תזכורות מתוזמנות לא יישלחו. יש להריץ את supabase-cron.sql ב-Supabase (README).";
-  else if (d.pushErrors?.some((f) => f.status === 403)) verdict = "שרת הפוש דוחה את המפתחות (403) — כנראה שמפתחות VAPID הוחלפו. כבו והפעילו מחדש התראות בכל מכשיר, או הסתמכו על טלגרם.";
+  else if (d.pushErrors?.some((f) => f.status === 403)) verdict = "שרת הפוש דוחה את המפתחות (403) — כנראה שמפתחות VAPID הוחלפו. כבו והפעילו מחדש התראות בכל מכשיר, או הסתמכו על SMS.";
 
   return (
     <div className="tj-pop" style={{ marginTop: 14, background: T.bg2, borderRadius: 18, padding: 14 }}>

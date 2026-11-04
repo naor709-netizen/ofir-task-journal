@@ -18,12 +18,14 @@ import {
 const hasCloud = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export type TelegramLink = { name?: string; linkedAt: string } | null;
+export type SmsLinkInfo = { mask: string; linkedAt: string } | null;
 
 export interface TeamMeta {
   roster: TeamRoster;
   pin: ManagerPin | null;
   prefs: NotifyPrefs;
   telegram: Record<string, TelegramLink>;
+  sms: Record<string, SmsLinkInfo>;
   loaded: boolean; // נטען מהמקור (ענן או מקומי) — לא רק מהמטמון
   mode: "cloud" | "local";
 }
@@ -34,7 +36,7 @@ const DEVICE_KEY = "ofir-manager-device";
 
 function readCache(): TeamMeta {
   const base: TeamMeta = {
-    roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {},
+    roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {},
     loaded: false, mode: hasCloud ? "cloud" : "local",
   };
   if (typeof window === "undefined") return base;
@@ -48,6 +50,7 @@ function readCache(): TeamMeta {
       pin: p.pin ?? null,
       prefs: { ...DEFAULT_PREFS, ...(p.prefs ?? {}) },
       telegram: p.telegram ?? {},
+      sms: p.sms ?? {},
       // בלי ענן המטמון הוא המקור עצמו
       loaded: !hasCloud,
     };
@@ -59,7 +62,7 @@ function readCache(): TeamMeta {
 let meta: TeamMeta | null = null;
 const metaListeners = new Set<() => void>();
 const SERVER_META: TeamMeta = {
-  roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, loaded: false, mode: "cloud",
+  roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, loaded: false, mode: "cloud",
 };
 
 export function subscribeTeamMeta(cb: () => void): () => void {
@@ -78,7 +81,7 @@ function setMeta(next: TeamMeta) {
   meta = next;
   try {
     localStorage.setItem(META_CACHE, JSON.stringify({
-      roster: next.roster, pin: next.pin, prefs: next.prefs, telegram: next.telegram,
+      roster: next.roster, pin: next.pin, prefs: next.prefs, telegram: next.telegram, sms: next.sms,
     }));
   } catch { /* quota */ }
   metaListeners.forEach((l) => l());
@@ -111,9 +114,10 @@ let metaTimer: ReturnType<typeof setTimeout> | null = null;
 async function refetchMeta() {
   try {
     const { supabase } = await import("./supabase");
-    const [main, tg] = await Promise.all([
+    const [main, tg, sms] = await Promise.all([
       supabase.from("journal_meta").select("key,payload").in("key", [META.team, META.pin, META.prefs]),
       supabase.from("journal_meta").select("key,payload").like("key", "tg:%"),
+      supabase.from("journal_meta").select("key,payload").like("key", "sms:%"),
     ]);
     if (main.error) throw main.error;
     const rows = (main.data ?? []) as { key: string; payload: unknown }[];
@@ -123,12 +127,18 @@ async function refetchMeta() {
       const jid = r.key.slice(3);
       telegram[jid] = r.payload?.linkedAt ? { name: r.payload.name, linkedAt: r.payload.linkedAt } : null;
     }
+    // רק המסכה ("050-•••-4567") מגיעה ללקוח; המספר עצמו מוצפן בשרת
+    const smsLinks: Record<string, SmsLinkInfo> = {};
+    for (const r of (sms.data ?? []) as { key: string; payload: { mask?: string; linkedAt?: string } | null }[]) {
+      smsLinks[r.key.slice(4)] = r.payload?.mask && r.payload.linkedAt ? { mask: r.payload.mask, linkedAt: r.payload.linkedAt } : null;
+    }
     const pin = get(META.pin) as ManagerPin | undefined;
     setMeta({
       roster: normalizeRoster(get(META.team)),
       pin: pin?.hash && pin?.salt ? pin : null,
       prefs: { ...DEFAULT_PREFS, ...((get(META.prefs) as Partial<NotifyPrefs>) ?? {}) },
       telegram,
+      sms: smsLinks,
       loaded: true,
       mode: "cloud",
     });
@@ -190,7 +200,7 @@ export async function removeMember(id: string) {
   if (!hasCloud) return;
   const { supabase } = await import("./supabase");
   await supabase.from("journal_tasks").delete().eq("payload->>journalId", id);
-  await deleteMeta([metaKey("categories", id), META.telegram(id), META.telegramPending(id)]);
+  await deleteMeta([metaKey("categories", id), META.telegram(id), META.telegramPending(id), `sms:${id}`, `sms-pending:${id}`]);
 }
 
 export async function savePrefs(prefs: NotifyPrefs) {

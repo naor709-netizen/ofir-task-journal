@@ -20,5 +20,5 @@ export async function POST(req: Request) {
     { title: "בדיקת התראות ✓", body: "אם זה הגיע — העדכונים מגיעים לטלפון גם כשהיומן סגור", tag: "test-push" },
     { telegram: { html: "<b>בדיקת התראות ✓</b>\nאם זה הגיע — העדכונים מגיעים לטלפון גם כשהיומן סגור." } }
   );
-  return NextResponse.json({ sent: out.pushed, subscriptions: subs.length, telegram: out.telegram });
+  return NextResponse.json({ sent: out.pushed, subscriptions: subs.length, telegram: out.telegram, sms: out.sms });
 }

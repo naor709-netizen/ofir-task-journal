@@ -117,8 +117,9 @@ export default function TaskJournal({ journalId, personName, personColor }: {
     })();
     return () => { cancelled = true; };
   }, [journalId]);
+  const smsLinked = !!teamMeta.sms[journalId];
   const telegramLinked = !!teamMeta.telegram[journalId];
-  const phoneReady = telegramLinked || pushState === "on";
+  const phoneReady = smsLinked || telegramLinked || pushState === "on";
 
   function persist(next: JournalData) {
     if (!setJournalData(next)) toast("השמירה נכשלה — ייתכן שהקבצים המצורפים גדולים מדי", "error");
@@ -527,7 +528,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                 background: phoneReady ? T.mint : T.amber, boxShadow: `0 0 0 2px ${T.surface}`,
               }} />
             </span>
-            <span className="tj-notify-label">{phoneReady ? (telegramLinked ? "טלגרם מחובר" : "התראות פעילות") : "עדכונים לטלפון"}</span>
+            <span className="tj-notify-label">{phoneReady ? (smsLinked ? "SMS מחובר" : telegramLinked ? "טלגרם מחובר" : "התראות פעילות") : "עדכונים לטלפון"}</span>
           </button>
           {!isTeam && (
             <button onClick={createTask} className="tj-newbtn" style={{ ...primaryBtn, padding: "6px 7px 6px 18px", height: 40 }}>

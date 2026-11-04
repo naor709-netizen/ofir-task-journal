@@ -186,7 +186,7 @@ export async function showLocalNotification(title: string, body: string, tag?: s
 }
 
 // שולח התראת-אמת דרך השרת לכל המכשירים הרשומים (בדיקת מסירה)
-export async function sendTestPush(journalId: string = MANAGER_ID): Promise<PushResult & { telegram?: string; pushed?: number }> {
+export async function sendTestPush(journalId: string = MANAGER_ID): Promise<PushResult & { telegram?: string; sms?: string; pushed?: number }> {
   try {
     const res = await fetch("/api/test-push", {
       method: "POST",
@@ -195,9 +195,9 @@ export async function sendTestPush(journalId: string = MANAGER_ID): Promise<Push
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, reason: json?.error || `http-${res.status}` };
-    const anyDelivered = (json?.sent ?? 0) > 0 || json?.telegram === "sent";
-    if (!anyDelivered) return { ok: false, reason: json?.subscriptions ? "no-delivery" : "no-subscriptions", telegram: json?.telegram };
-    return { ok: true, telegram: json?.telegram, pushed: json?.sent ?? 0 };
+    const anyDelivered = (json?.sent ?? 0) > 0 || json?.telegram === "sent" || json?.sms === "sent";
+    if (!anyDelivered) return { ok: false, reason: json?.subscriptions ? "no-delivery" : "no-subscriptions", telegram: json?.telegram, sms: json?.sms };
+    return { ok: true, telegram: json?.telegram, sms: json?.sms, pushed: json?.sent ?? 0 };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "failed" };
   }
@@ -254,5 +254,43 @@ export async function disablePush(): Promise<void> {
     }
   } catch {
     /* best-effort */
+  }
+}
+
+// ---------- SMS (Twilio) ----------
+
+export type SmsStatus = {
+  configured: boolean;
+  linked?: { mask: string; linkedAt: string; readable: boolean } | null;
+  pending?: { mask: string } | null;
+  error?: string;
+};
+
+export async function smsStatus(journalId: string): Promise<SmsStatus> {
+  try {
+    const res = await fetch(`/api/sms?journal=${encodeURIComponent(journalId)}`, { cache: "no-store" });
+    if (!res.ok) return { configured: false, error: `http-${res.status}` };
+    return await res.json();
+  } catch {
+    return { configured: false, error: "offline" };
+  }
+}
+
+export type SmsActionResult = { ok?: boolean; mask?: string; error?: string; hint?: string; wait?: number; left?: number };
+
+export async function smsAction(
+  journalId: string,
+  action: "start" | "verify" | "unlink" | "test",
+  extra: { phone?: string; code?: string } = {}
+): Promise<SmsActionResult> {
+  try {
+    const res = await fetch("/api/sms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, journal: journalId, ...extra }),
+    });
+    return await res.json().catch(() => ({ error: `http-${res.status}` }));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "offline" };
   }
 }

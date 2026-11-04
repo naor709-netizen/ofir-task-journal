@@ -5,6 +5,7 @@ import {
   type TeamRoster, type NotifyPrefs,
 } from "@/lib/journals";
 import { telegramToJournal, tgConfigured, type TgButton } from "./telegram";
+import { smsToJournal, smsConfigured, smsText } from "./sms";
 
 // ============================================================
 // תשתית משותפת לאוטומציות השרת (בריף בוקר, סיכום שבועי,
@@ -237,22 +238,29 @@ export function emailShell(heading: string, lines: string[], cta = true): string
 </div>`;
 }
 
-export type DeliveryResult = { pushed: number; telegram: "sent" | "skipped" | "failed"; email: string };
+type ChannelResult = "sent" | "skipped" | "failed";
+export type DeliveryResult = { pushed: number; sms: ChannelResult; telegram: ChannelResult; email: string };
 
-// מסירה ליומן אחד: פוש לכל המכשירים שלו + טלגרם (אם חובר) + מייל (לאופיר בלבד)
+// מסירה ליומן אחד: SMS לטלפון (אם חובר) + פוש לכל המכשירים שלו + טלגרם (אם חובר)
+// + מייל (לאופיר בלבד). כל ערוץ עצמאי — כשל באחד לא עוצר את האחרים.
 export async function notifyJournal(
   sb: SupabaseClient,
   journalId: string,
   d: Delivery,
-  opts: { email?: { subject: string; html: string }; telegram?: { html: string; buttons?: TgButton[][] } } = {}
+  opts: {
+    email?: { subject: string; html: string };
+    telegram?: { html: string; buttons?: TgButton[][] };
+    sms?: string; // טקסט ייעודי ל-SMS; ברירת מחדל: כותרת + גוף, מקוצר ל-2 חלקים
+  } = {}
 ): Promise<DeliveryResult> {
   const tgHtml = opts.telegram?.html ?? `<b>${escHtml(d.title)}</b>\n${escHtml(d.body)}`;
-  const [pushed, telegram] = await Promise.all([
+  const [pushed, sms, telegram] = await Promise.all([
     pushToJournal(sb, journalId, d).catch(() => 0),
+    smsConfigured() ? smsToJournal(sb, journalId, opts.sms ?? smsText(d.title, d.body)).catch(() => "failed" as const) : Promise.resolve("skipped" as const),
     tgConfigured() ? telegramToJournal(sb, journalId, tgHtml, opts.telegram?.buttons) : Promise.resolve("skipped" as const),
   ]);
   const mail = opts.email && journalId === MANAGER_ID ? await sendEmail(opts.email.subject, opts.email.html) : "skipped";
-  return { pushed, telegram, email: mail };
+  return { pushed, sms, telegram, email: mail };
 }
 
 export async function notify(

@@ -1,5 +1,10 @@
 import webpush from "web-push";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  MANAGER_ID, MANAGER_NAME, META, DEFAULT_PREFS, journalOfPayload, journalPath, metaKey, normalizeRoster,
+  type TeamRoster, type NotifyPrefs,
+} from "@/lib/journals";
+import { telegramToJournal, tgConfigured, type TgButton } from "./telegram";
 
 // ============================================================
 // תשתית משותפת לאוטומציות השרת (בריף בוקר, סיכום שבועי,
@@ -22,11 +27,20 @@ export type Task = {
   endDate?: string | null;
   reminders?: Reminder[];
   subtasks?: Task[];
+  assignedBy?: string | null;
+  journalId?: string;
 };
 
 export type Category = { id: string; name: string; color: string; parentId?: string | null };
 
 export const TZ = "Asia/Jerusalem";
+
+// כתובת האתר בפרודקשן — לקישורים בהתראות, במיילים ובטלגרם
+export function appUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  return "https://ofir-task-journal.vercel.app";
+}
 
 export type EnvResult =
   | { ok: true; url: string; key: string }
@@ -97,38 +111,96 @@ export function daysSince(iso: string | null | undefined): number | null {
 
 export const isDone = (t: Task) => t.status === "done";
 
-export async function loadJournal(sb: SupabaseClient): Promise<{ tasks: Task[]; categories: Category[] }> {
-  const [tasksRes, metaRes] = await Promise.all([
+export async function loadRoster(sb: SupabaseClient): Promise<TeamRoster> {
+  const { data } = await sb.from("journal_meta").select("payload").eq("key", META.team).maybeSingle();
+  return normalizeRoster(data?.payload);
+}
+
+export async function loadPrefs(sb: SupabaseClient): Promise<NotifyPrefs> {
+  const { data } = await sb.from("journal_meta").select("payload").eq("key", META.prefs).maybeSingle();
+  return { ...DEFAULT_PREFS, ...((data?.payload as Partial<NotifyPrefs>) ?? {}) };
+}
+
+export interface JournalView {
+  id: string;
+  name: string;
+  tasks: Task[]; // משימות שורש
+  categories: Category[];
+}
+
+// כל היומנים: של אופיר + של כל אנשי הצוות ברשימה
+export async function loadJournals(sb: SupabaseClient): Promise<{ roster: TeamRoster; journals: JournalView[] }> {
+  const [tasksRes, metaRes, roster] = await Promise.all([
     sb.from("journal_tasks").select("id,payload"),
-    sb.from("journal_meta").select("key,payload"),
+    sb.from("journal_meta").select("key,payload").like("key", "categories%"),
+    loadRoster(sb),
   ]);
   if (tasksRes.error) throw tasksRes.error;
-  const tasks = ((tasksRes.data ?? []) as { payload: Task }[]).map((r) => r.payload).filter(Boolean);
-  const catsRow = (metaRes.data ?? []).find((r: { key: string }) => r.key === "categories");
-  return { tasks, categories: (catsRow?.payload as Category[]) ?? [] };
+  const cats = new Map(((metaRes.data ?? []) as { key: string; payload: Category[] }[]).map((r) => [r.key, r.payload]));
+  const people = [{ id: MANAGER_ID, name: MANAGER_NAME }, ...roster.members.map((m) => ({ id: m.id, name: m.name }))];
+  const journals: JournalView[] = people.map((p) => ({
+    ...p,
+    tasks: [],
+    categories: cats.get(metaKey("categories", p.id)) ?? [],
+  }));
+  const byId = new Map(journals.map((j) => [j.id, j]));
+  for (const r of (tasksRes.data ?? []) as { payload: Task }[]) {
+    if (!r.payload) continue;
+    byId.get(journalOfPayload(r.payload))?.tasks.push(r.payload);
+  }
+  return { roster, journals };
+}
+
+// היומן של אופיר בלבד (תאימות לקוד קיים)
+export async function loadJournal(sb: SupabaseClient): Promise<{ tasks: Task[]; categories: Category[] }> {
+  const { journals } = await loadJournals(sb);
+  const j = journals.find((x) => x.id === MANAGER_ID)!;
+  return { tasks: j.tasks, categories: j.categories };
 }
 
 // ---- מסירה ----
 
 export type Delivery = { title: string; body: string; url?: string; tag?: string };
 
-export async function pushToAll(sb: SupabaseClient, d: Delivery): Promise<number> {
+type SubRow = { endpoint: string; subscription: webpush.PushSubscription & { journalId?: string } };
+
+// המכשירים של יומן מסוים. מנויים ישנים בלי שיוך שייכים לאופיר.
+export async function journalSubscriptions(sb: SupabaseClient, journalId: string): Promise<SubRow[]> {
   const { data } = await sb.from("push_subscriptions").select("endpoint,subscription");
-  const subs = (data ?? []) as { endpoint: string; subscription: webpush.PushSubscription }[];
-  const payload = JSON.stringify({ title: d.title, body: d.body, tag: d.tag, url: d.url || "/" });
+  return ((data ?? []) as SubRow[]).filter((s) => (s.subscription?.journalId || MANAGER_ID) === journalId);
+}
+
+export async function pushToJournal(sb: SupabaseClient, journalId: string, d: Delivery): Promise<number> {
+  const subs = await journalSubscriptions(sb, journalId);
+  const payload = JSON.stringify({ title: d.title, body: d.body, tag: d.tag, url: d.url || journalPath(journalId) });
   const stale: string[] = [];
+  const failures: { status: number | null; host: string; body: string }[] = [];
   let sent = 0;
   for (const s of subs) {
     try {
-      await webpush.sendNotification(s.subscription, payload);
+      await webpush.sendNotification(s.subscription, payload, { TTL: 60 * 60 * 12, urgency: "high" });
       sent++;
     } catch (e: unknown) {
-      const code = (e as { statusCode?: number }).statusCode;
+      const err = e as { statusCode?: number; body?: string; message?: string };
+      const code = err.statusCode ?? null;
       if (code === 404 || code === 410) stale.push(s.endpoint);
+      else {
+        let host = "";
+        try { host = new URL(s.endpoint).host; } catch { /* ignore */ }
+        failures.push({ status: code, host, body: String(err.body ?? err.message ?? "").slice(0, 200) });
+      }
     }
   }
   if (stale.length) await sb.from("push_subscriptions").delete().in("endpoint", stale);
+  // כשל מסירה שקט הוא בדיוק התקלה "ההתראות לא מגיעות" — נרשם כדי שהאבחון יראה אותו
+  if (failures.length) await record(sb, "push:errors", { at: new Date().toISOString(), journalId, failures });
+  else if (sent) await record(sb, "push:last-ok", { at: new Date().toISOString(), journalId, sent });
   return sent;
+}
+
+// תאימות: "לכל המכשירים" היה עד היום = המכשירים של אופיר
+export async function pushToAll(sb: SupabaseClient, d: Delivery): Promise<number> {
+  return pushToJournal(sb, MANAGER_ID, d);
 }
 
 // שליחת מייל דרך Resend — אופציונלי לגמרי; בלי מפתח פשוט מדלגים
@@ -160,19 +232,40 @@ export function emailShell(heading: string, lines: string[], cta = true): string
     <h1 style="margin:0 0 4px;font-size:19px;color:#15253F">${heading}</h1>
     <p style="margin:0 0 16px;font-size:12px;color:#7C8DA4">יומן המשימות של אופיר</p>
     <ul style="margin:0;padding-inline-start:18px;font-size:14px;color:#15253F;line-height:1.6">${items}</ul>
-    ${cta ? `<a href="https://ofir-task-journal.vercel.app" style="display:inline-block;margin-top:18px;background:#1D4FD7;color:#fff;text-decoration:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:700">פתיחת היומן</a>` : ""}
+    ${cta ? `<a href="${appUrl()}" style="display:inline-block;margin-top:18px;background:#1D4FD7;color:#fff;text-decoration:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:700">פתיחת היומן</a>` : ""}
   </div>
 </div>`;
+}
+
+export type DeliveryResult = { pushed: number; telegram: "sent" | "skipped" | "failed"; email: string };
+
+// מסירה ליומן אחד: פוש לכל המכשירים שלו + טלגרם (אם חובר) + מייל (לאופיר בלבד)
+export async function notifyJournal(
+  sb: SupabaseClient,
+  journalId: string,
+  d: Delivery,
+  opts: { email?: { subject: string; html: string }; telegram?: { html: string; buttons?: TgButton[][] } } = {}
+): Promise<DeliveryResult> {
+  const tgHtml = opts.telegram?.html ?? `<b>${escHtml(d.title)}</b>\n${escHtml(d.body)}`;
+  const [pushed, telegram] = await Promise.all([
+    pushToJournal(sb, journalId, d).catch(() => 0),
+    tgConfigured() ? telegramToJournal(sb, journalId, tgHtml, opts.telegram?.buttons) : Promise.resolve("skipped" as const),
+  ]);
+  const mail = opts.email && journalId === MANAGER_ID ? await sendEmail(opts.email.subject, opts.email.html) : "skipped";
+  return { pushed, telegram, email: mail };
 }
 
 export async function notify(
   sb: SupabaseClient,
   d: Delivery,
   email?: { subject: string; html: string }
-): Promise<{ pushed: number; email: string }> {
-  const pushed = await pushToAll(sb, d);
-  const mail = email ? await sendEmail(email.subject, email.html) : "skipped";
-  return { pushed, email: mail };
+): Promise<DeliveryResult> {
+  return notifyJournal(sb, MANAGER_ID, d, { email });
+}
+
+export function escHtml(s: string): string {
+  return String(s ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }
 
 // ---- יומן ריצות + מניעת הצפה בהתראות ----
@@ -205,4 +298,11 @@ export async function lastRunAt(sb: SupabaseClient, key: string): Promise<number
 export async function shouldAlert(sb: SupabaseClient, key: string, minIntervalMinutes: number): Promise<boolean> {
   const last = await lastRunAt(sb, key);
   return last === null || Date.now() - last >= minIntervalMinutes * 60000;
+}
+
+// "2026-11-04" → "4.11"
+export function formatDue(key: string | null | undefined): string {
+  if (!key) return "";
+  const [, m, d] = key.split("-");
+  return m && d ? `${parseInt(d, 10)}.${parseInt(m, 10)}` : key;
 }

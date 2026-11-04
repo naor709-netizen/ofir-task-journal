@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireEnv } from "@/lib/server/automation";
+import { tgConfigured } from "@/lib/server/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export async function GET() {
     vapidPrivate: !!process.env.VAPID_PRIVATE_KEY,
     cronSecret: !!process.env.CRON_SECRET,
     email: !!process.env.RESEND_API_KEY && !!process.env.ALERT_EMAIL_TO,
+    telegram: tgConfigured(),
   };
   if (!url || !key) {
     return NextResponse.json({ ok: false, reason: "missing-env", config }, { status: 503 });
@@ -32,13 +34,15 @@ export async function GET() {
   const env = requireEnv();
   if (!env.ok) problems.push(`bad-config: ${env.reason}`);
 
-  const [hb, subs, backup, log] = await Promise.all([
+  const [hb, subs, backup, log, pushLog, tgLinks] = await Promise.all([
     sb.from("reminders_sent").select("sent_at").eq("reminder_id", "__cron_heartbeat__").maybeSingle(),
     sb.from("push_subscriptions").select("endpoint", { count: "exact", head: true }),
     sb.from("journal_backups").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     // select רגיל ולא head+count: על head בלי גוף תגובה שגיאת "טבלה חסרה"
     // לא תמיד מדווחת ע"י supabase-js, וההסתמכות עליה החמיצה את התקלה
     sb.from("automation_log").select("key").limit(1),
+    sb.from("automation_log").select("key,last_run_at,detail").in("key", ["push:errors", "push:last-ok"]),
+    sb.from("journal_meta").select("key", { count: "exact", head: true }).like("key", "tg:%"),
   ]);
 
   // בלי הטבלה הזו אין מנגנון השתקה להתראות — והשומר מוותר על שליחה כדי לא להציף
@@ -52,7 +56,9 @@ export async function GET() {
   // count === null מציין שהספירה לא הוחזרה — נחשב "לא קריא", לא "אפס מכשירים"
   const subscriptions = subs.error || subs.count === null ? null : subs.count;
   if (subscriptions === null) problems.push("subscriptions-unreadable");
-  else if (subscriptions === 0) problems.push("no-devices");
+  // אין מכשירי פוש — תקלה רק אם גם טלגרם לא מחובר (אחרת אין לאן להגיע)
+  const tgLinked = !tgLinks.error && (tgLinks.count ?? 0) > 0 && config.telegram;
+  if (subscriptions === 0) (tgLinked ? warnings : problems).push("no-devices");
 
   // גיבוי שקיים והפסיק = רגרסיה אמיתית (אזעקה). גיבוי שטרם הוגדר = התקנה
   // חלקה (אזהרה) — אחרת השומר צורח על שלב שממתין לביצוע.
@@ -62,9 +68,25 @@ export async function GET() {
   else if (backupAgeHours === null) warnings.push("backup-never-ran");
   else if (backupAgeHours > 48) problems.push("backup-stale");
 
+  // מסירת פוש שנכשלת (למשל 403 ממפתחות VAPID שהוחלפו) — לא נמחקת אוטומטית ולכן שקטה.
+  // אזהרה ולא אזעקה: טלגרם ממשיך לעבוד גם כשפוש נכשל.
+  const plog = (pushLog.data ?? []) as { key: string; last_run_at: string; detail: { failures?: { status: number | null; host: string }[] } }[];
+  const lastErr = plog.find((r) => r.key === "push:errors");
+  const lastOk = plog.find((r) => r.key === "push:last-ok");
+  const errTs = lastErr ? new Date(lastErr.last_run_at).getTime() : 0;
+  const okTs = lastOk ? new Date(lastOk.last_run_at).getTime() : 0;
+  let pushErrors: { status: number | null; host: string }[] | null = null;
+  if (errTs > okTs && Date.now() - errTs < 24 * 3600000) {
+    pushErrors = (lastErr?.detail?.failures ?? []).map((f) => ({ status: f.status, host: f.host }));
+    warnings.push(`push-delivery-failing (${pushErrors.map((f) => `${f.status ?? "?"}@${f.host}`).join(", ")})`);
+  }
+
+  const telegramLinks = tgLinks.error ? null : tgLinks.count ?? 0;
+  if (config.telegram && telegramLinks === 0) warnings.push("telegram-not-linked");
+
   const ok = problems.length === 0;
   return NextResponse.json(
-    { ok, problems, warnings, cronAgeMinutes, subscriptions, backupAgeHours, config },
+    { ok, problems, warnings, cronAgeMinutes, subscriptions, backupAgeHours, telegramLinks, pushErrors, config },
     { status: ok ? 200 : 503 }
   );
 }

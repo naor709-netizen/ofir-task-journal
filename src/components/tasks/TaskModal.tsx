@@ -7,7 +7,7 @@ import { useToast } from "@/components/Toast";
 import {
   type Task, type TaskCategory, type TaskFile, type TaskNature, type TaskStatus,
   emptyTask, uid, isDone, updateTaskInTree, removeTaskFromTree, countSubtasks,
-  formatDateHe, formatDateTimeHe, isoToLocalInput, localInputToIso,
+  formatDateHe, formatDateTimeHe, isoToLocalInput, localInputToIso, toDateKey,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
 import { T, alpha, chip, inputStyle, Ic, StatusIcon } from "./ui";
@@ -92,7 +92,8 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
     if (s === "done" && current.status !== "done") celebrate();
     patch({
       status: s,
-      endDate: s === "done" && !current.endDate ? new Date().toISOString().slice(0, 10) : current.endDate,
+      // תאריך מקומי ולא UTC — אחרת סגירה אחרי חצות בישראל נרשמת לאתמול
+      endDate: s === "done" && !current.endDate ? toDateKey(new Date()) : current.endDate,
     });
   }
 
@@ -448,9 +449,9 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
                     onClick={() => setPath((p) => [...p, s.id])}
                     style={{
                       display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
-                      background: T.surface, border: `1px solid ${T.line}`,
-                      borderInlineStart: `3px solid ${s.critical ? T.danger : T.mint}`,
-                      borderRadius: 11, padding: "9px 11px", opacity: sDone ? 0.55 : 1,
+                      background: s.critical ? `color-mix(in srgb, ${T.danger} 6%, ${T.surface})` : T.surface,
+                      border: `1px solid ${s.critical ? `color-mix(in srgb, ${T.danger} 24%, transparent)` : T.line}`,
+                      borderRadius: 12, padding: "9px 11px", opacity: sDone ? 0.55 : 1,
                     }}>
                     <button
                       title="קידום סטטוס"

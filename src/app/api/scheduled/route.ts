@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import {
-  requireEnv, db, loadJournal, flatten, dateKey, daysSince, isDone,
-  notify, emailShell, record, type Task,
+  requireEnv, db, loadJournals, loadPrefs, dateKey, notifyJournal, emailShell, record, appUrl, escHtml,
+  type Task, type JournalView,
 } from "@/lib/server/automation";
+import { summarize, personLine, taskBullets, todayHtml, plural } from "@/lib/server/briefs";
+import { MANAGER_ID, journalPath } from "@/lib/journals";
+import type { TgButton } from "@/lib/server/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Job = "morning-brief" | "weekly-digest" | "stuck-watch" | "backup";
 const JOBS: Job[] = ["morning-brief", "weekly-digest", "stuck-watch", "backup"];
-
-const plural = (n: number, one: string, many: string) => (n === 1 ? one : `${n} ${many}`);
 
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -48,114 +49,181 @@ type Sb = ReturnType<typeof db>;
 async function run(job: Job, sb: Sb) {
   if (job === "backup") return backup(sb);
 
-  const { tasks, categories } = await loadJournal(sb);
-  const all = flatten(tasks);
+  const [{ journals }, prefs] = await Promise.all([loadJournals(sb), loadPrefs(sb)]);
   const today = dateKey();
-  const catName = (id?: string | null) => categories.find((c) => c.id === id)?.name ?? "";
+  const members = journals.filter((j) => j.id !== MANAGER_ID);
 
-  if (job === "morning-brief") return morningBrief(sb, all, today, catName);
-  if (job === "weekly-digest") return weeklyDigest(sb, all, today);
-  return stuckWatch(sb, all, today, catName);
+  if (job === "morning-brief") return morningBrief(sb, journals, members, today, prefs.teamBrief);
+  if (job === "weekly-digest") return weeklyDigest(sb, journals, members, today, prefs.teamBrief);
+  return stuckWatch(sb, journals, members, today, prefs.teamBrief);
+}
+
+const openBtn = (j: JournalView): TgButton[][] => [[{ text: "פתיחת היומן", url: `${appUrl()}${journalPath(j.id)}` }]];
+const teamBtn: TgButton[][] = [[{ text: "דשבורד הצוות", url: `${appUrl()}/?view=team` }]];
+
+function catLabel(j: JournalView, t: Task): string {
+  const name = j.categories.find((c) => c.id === t.categoryId)?.name;
+  return name ? ` <span style="color:#7C8DA4">· ${escHtml(name)}</span>` : "";
 }
 
 // ---- בריף בוקר ----
-async function morningBrief(sb: Sb, all: Task[], today: string, catName: (id?: string | null) => string) {
-  const open = all.filter((t) => !isDone(t));
-  const dueToday = open.filter((t) => t.dueDate === today);
-  const overdue = open.filter((t) => t.dueDate && t.dueDate < today);
-  const critical = open.filter((t) => t.critical);
+async function morningBrief(sb: Sb, journals: JournalView[], members: JournalView[], today: string, teamBrief: boolean) {
+  const results: Record<string, unknown> = {};
 
-  if (dueToday.length === 0 && overdue.length === 0 && critical.length === 0) {
-    return { sent: false, reason: "nothing-today" };
+  for (const j of journals) {
+    const s = summarize(j.tasks, today);
+    if (s.dueToday.length === 0 && s.overdue.length === 0 && s.critical.length === 0) {
+      results[j.id] = { sent: false, reason: "nothing-today" };
+      continue;
+    }
+    const bits: string[] = [];
+    if (s.dueToday.length) bits.push(plural(s.dueToday.length, "משימה אחת להיום", "משימות להיום"));
+    if (s.critical.length) bits.push(`${s.critical.length} קריטיות`);
+    if (s.overdue.length) bits.push(`${s.overdue.length} באיחור`);
+    const headline = s.dueToday[0] ?? s.critical[0] ?? s.overdue[0];
+    const body = `${bits.join(" · ")}${headline?.title ? ` — הכי דחוף: ${headline.title}` : ""}`;
+
+    const lines = [
+      ...s.dueToday.slice(0, 8).map((t) => `<b>${escHtml(t.title)}</b>${catLabel(j, t)}`),
+      ...s.overdue.slice(0, 5).map((t) => `<span style="color:#DC2626">באיחור:</span> ${escHtml(t.title)}`),
+    ];
+    if (lines.length === 0) lines.push("אין משימות עם תאריך יעד להיום.");
+
+    results[j.id] = await notifyJournal(
+      sb, j.id,
+      { title: "☀️ הבריף של היום", body, tag: `brief-${today}` },
+      {
+        email: { subject: `הבריף של היום — ${bits.join(" · ")}`, html: emailShell("☀️ הבריף של היום", lines) },
+        telegram: { html: todayHtml(j.name, s), buttons: openBtn(j) },
+      }
+    );
   }
 
-  const bits: string[] = [];
-  if (dueToday.length) bits.push(`${plural(dueToday.length, "משימה אחת להיום", "משימות להיום")}`);
-  if (critical.length) bits.push(`${critical.length} קריטיות`);
-  if (overdue.length) bits.push(`${overdue.length} באיחור`);
-
-  const headline = dueToday[0] ?? critical[0] ?? overdue[0];
-  const body = `${bits.join(" · ")}${headline?.title ? ` — הכי דחוף: ${headline.title}` : ""}`;
-
-  const lines = [
-    ...dueToday.slice(0, 8).map((t) => `<b>${esc(t.title)}</b>${catName(t.categoryId) ? ` <span style="color:#7C8DA4">· ${esc(catName(t.categoryId))}</span>` : ""}`),
-    ...overdue.slice(0, 5).map((t) => `<span style="color:#DC2626">באיחור:</span> ${esc(t.title)}`),
-  ];
-  if (lines.length === 0) lines.push("אין משימות עם תאריך יעד להיום.");
-
-  const out = await notify(
-    sb,
-    { title: "☀️ הבריף של היום", body, tag: `brief-${today}` },
-    { subject: `הבריף של היום — ${bits.join(" · ")}`, html: emailShell("☀️ הבריף של היום", lines) }
-  );
-  return { sent: true, dueToday: dueToday.length, overdue: overdue.length, critical: critical.length, ...out };
+  // תמונת מצב הצוות — לאופיר בלבד
+  if (teamBrief && members.length) {
+    const rows = members.map((m) => personLine(m, summarize(m.tasks, today)));
+    if (rows.some((r) => r.active)) {
+      results.team = await notifyJournal(
+        sb, MANAGER_ID,
+        { title: "👥 הצוות היום", body: rows.map((r) => r.text).join(" · "), tag: `team-brief-${today}`, url: "/?view=team" },
+        { telegram: { html: ["<b>👥 הצוות היום</b>", "", ...rows.map((r) => r.html)].join("\n"), buttons: teamBtn } }
+      );
+    }
+  }
+  return { sent: true, results };
 }
 
 // ---- סיכום שבועי ----
-async function weeklyDigest(sb: Sb, all: Task[], today: string) {
-  const weekAgo = dateKey(new Date(), -7);
-  const doneThisWeek = all.filter((t) => isDone(t) && t.endDate && t.endDate >= weekAgo && t.endDate <= today);
-  const open = all.filter((t) => !isDone(t));
-  const overdue = open.filter((t) => t.dueDate && t.dueDate < today);
-  const nextWeek = dateKey(new Date(), 7);
-  const upcoming = open.filter((t) => t.dueDate && t.dueDate > today && t.dueDate <= nextWeek);
-  const pct = all.length ? Math.round((all.filter(isDone).length / all.length) * 100) : 0;
+async function weeklyDigest(sb: Sb, journals: JournalView[], members: JournalView[], today: string, teamBrief: boolean) {
+  const results: Record<string, unknown> = {};
+  for (const j of journals) {
+    const s = summarize(j.tasks, today);
+    const body = `הושלמו ${s.doneThisWeek.length} השבוע · ${s.open.length} פתוחות · ${s.overdue.length} באיחור`;
+    const lines = [
+      `<b>הושלמו השבוע:</b> ${s.doneThisWeek.length}`,
+      `<b>נותרו פתוחות:</b> ${s.open.length}`,
+      `<b>באיחור:</b> <span style="color:${s.overdue.length ? "#DC2626" : "#0FA47E"}">${s.overdue.length}</span>`,
+      `<b>לשבוע הבא:</b> ${s.upcoming.length}`,
+      `<b>התקדמות כוללת:</b> ${s.pct}%`,
+      ...(s.doneThisWeek.length
+        ? [`<br><b>מה נסגר השבוע:</b>`, ...s.doneThisWeek.slice(0, 10).map((t) => `✓ ${escHtml(t.title)}`)]
+        : []),
+    ];
+    const tgHtml = [
+      `<b>📊 סיכום השבוע — ${escHtml(j.name)}</b>`,
+      "",
+      `✅ הושלמו: <b>${s.doneThisWeek.length}</b>`,
+      `📋 פתוחות: <b>${s.open.length}</b>`,
+      `⏰ באיחור: <b>${s.overdue.length}</b>`,
+      `📅 לשבוע הבא: <b>${s.upcoming.length}</b>`,
+      `📈 התקדמות כוללת: <b>${s.pct}%</b>`,
+      ...(s.doneThisWeek.length ? ["", "<b>מה נסגר:</b>", ...taskBullets(s.doneThisWeek, 8, "✓")] : []),
+    ].join("\n");
+    results[j.id] = await notifyJournal(
+      sb, j.id,
+      { title: "📊 סיכום השבוע", body, tag: `digest-${today}` },
+      {
+        email: { subject: `סיכום שבועי — ${s.doneThisWeek.length} משימות הושלמו`, html: emailShell("📊 סיכום השבוע", lines) },
+        telegram: { html: tgHtml, buttons: openBtn(j) },
+      }
+    );
+  }
 
-  const body = `הושלמו ${doneThisWeek.length} השבוע · ${open.length} פתוחות · ${overdue.length} באיחור`;
-  const lines = [
-    `<b>הושלמו השבוע:</b> ${doneThisWeek.length}`,
-    `<b>נותרו פתוחות:</b> ${open.length}`,
-    `<b>באיחור:</b> <span style="color:${overdue.length ? "#DC2626" : "#0FA47E"}">${overdue.length}</span>`,
-    `<b>לשבוע הבא:</b> ${upcoming.length}`,
-    `<b>התקדמות כוללת:</b> ${pct}%`,
-    ...(doneThisWeek.length
-      ? [`<br><b>מה נסגר השבוע:</b>`, ...doneThisWeek.slice(0, 10).map((t) => `✓ ${esc(t.title)}`)]
-      : []),
-  ];
-
-  const out = await notify(
-    sb,
-    { title: "📊 סיכום השבוע", body, tag: `digest-${today}` },
-    { subject: `סיכום שבועי — ${doneThisWeek.length} משימות הושלמו`, html: emailShell("📊 סיכום השבוע", lines) }
-  );
-  return { sent: true, doneThisWeek: doneThisWeek.length, open: open.length, overdue: overdue.length, pct, ...out };
+  if (teamBrief && members.length) {
+    const rows = members.map((m) => {
+      const s = summarize(m.tasks, today);
+      return {
+        text: `${m.name}: ${s.doneThisWeek.length} הושלמו, ${s.open.length} פתוחות`,
+        html: `<b>${escHtml(m.name)}</b> — ✅ ${s.doneThisWeek.length} הושלמו · 📋 ${s.open.length} פתוחות · ⏰ ${s.overdue.length} באיחור · ${s.pct}%`,
+      };
+    });
+    results.team = await notifyJournal(
+      sb, MANAGER_ID,
+      { title: "👥 הצוות השבוע", body: rows.map((r) => r.text).join(" · "), tag: `team-digest-${today}`, url: "/?view=team" },
+      { telegram: { html: ["<b>👥 הצוות השבוע</b>", "", ...rows.map((r) => r.html)].join("\n"), buttons: teamBtn } }
+    );
+  }
+  return { sent: true, results };
 }
 
 // ---- משימות תקועות ----
-async function stuckWatch(sb: Sb, all: Task[], today: string, catName: (id?: string | null) => string) {
-  const STUCK_DAYS = 14;
-  const open = all.filter((t) => !isDone(t));
-  const stuck = open.filter((t) => {
-    const age = daysSince(t.createdAt);
-    return t.status === "in_progress" && age !== null && age >= STUCK_DAYS;
-  });
-  const longOverdue = open.filter((t) => {
-    if (!t.dueDate || t.dueDate >= today) return false;
-    const days = Math.floor((Date.parse(today) - Date.parse(t.dueDate)) / 86400000);
-    return days >= 7;
-  });
-
-  if (stuck.length === 0 && longOverdue.length === 0) {
-    return { sent: false, reason: "nothing-stuck" };
+async function stuckWatch(sb: Sb, journals: JournalView[], members: JournalView[], today: string, teamBrief: boolean) {
+  const results: Record<string, unknown> = {};
+  for (const j of journals) {
+    const s = summarize(j.tasks, today);
+    if (s.stuck.length === 0 && s.longOverdue.length === 0) {
+      results[j.id] = { sent: false, reason: "nothing-stuck" };
+      continue;
+    }
+    const body = [
+      s.stuck.length ? `${s.stuck.length} תקועות ב"בתהליך"` : "",
+      s.longOverdue.length ? `${s.longOverdue.length} באיחור מעל שבוע` : "",
+    ].filter(Boolean).join(" · ");
+    const label = (t: Task) => `${escHtml(t.title)}${catLabel(j, t)}`;
+    const lines = [
+      ...(s.stuck.length ? [`<b>תקועות ב"בתהליך" מעל שבועיים:</b>`, ...s.stuck.slice(0, 10).map(label)] : []),
+      ...(s.longOverdue.length ? [`<br><b>באיחור מעל שבוע:</b>`, ...s.longOverdue.slice(0, 10).map(label)] : []),
+    ];
+    const tgHtml = [
+      `<b>🕸️ משימות שנתקעו — ${escHtml(j.name)}</b>`,
+      ...(s.stuck.length ? ["", "<b>ב\"בתהליך\" מעל שבועיים:</b>", ...taskBullets(s.stuck, 8)] : []),
+      ...(s.longOverdue.length ? ["", "<b>באיחור מעל שבוע:</b>", ...taskBullets(s.longOverdue, 8, "⏰")] : []),
+    ].join("\n");
+    results[j.id] = await notifyJournal(
+      sb, j.id,
+      { title: "🕸️ משימות שנתקעו", body, tag: `stuck-${today}` },
+      {
+        email: { subject: `משימות שנתקעו — ${body}`, html: emailShell("🕸️ משימות שנתקעו", lines) },
+        telegram: { html: tgHtml, buttons: openBtn(j) },
+      }
+    );
   }
 
-  const body = [
-    stuck.length ? `${stuck.length} תקועות ב"בתהליך"` : "",
-    longOverdue.length ? `${longOverdue.length} באיחור מעל שבוע` : "",
-  ].filter(Boolean).join(" · ");
-
-  const label = (t: Task) => `${esc(t.title)}${catName(t.categoryId) ? ` <span style="color:#7C8DA4">· ${esc(catName(t.categoryId))}</span>` : ""}`;
-  const lines = [
-    ...(stuck.length ? [`<b>תקועות ב"בתהליך" מעל שבועיים:</b>`, ...stuck.slice(0, 10).map(label)] : []),
-    ...(longOverdue.length ? [`<br><b>באיחור מעל שבוע:</b>`, ...longOverdue.slice(0, 10).map(label)] : []),
-  ];
-
-  const out = await notify(
-    sb,
-    { title: "🕸️ משימות שנתקעו", body, tag: `stuck-${today}` },
-    { subject: `משימות שנתקעו — ${body}`, html: emailShell("🕸️ משימות שנתקעו", lines) }
-  );
-  return { sent: true, stuck: stuck.length, longOverdue: longOverdue.length, ...out };
+  if (teamBrief && members.length) {
+    const rows = members
+      .map((m) => ({ m, s: summarize(m.tasks, today) }))
+      .filter(({ s }) => s.stuck.length || s.longOverdue.length);
+    if (rows.length) {
+      const html = [
+        "<b>🕸️ תקוע אצל הצוות</b>",
+        ...rows.flatMap(({ m, s }) => [
+          "",
+          `<b>${escHtml(m.name)}</b>`,
+          ...taskBullets([...s.stuck, ...s.longOverdue.filter((t) => !s.stuck.includes(t))], 6),
+        ]),
+      ].join("\n");
+      results.team = await notifyJournal(
+        sb, MANAGER_ID,
+        {
+          title: "🕸️ תקוע אצל הצוות",
+          body: rows.map(({ m, s }) => `${m.name}: ${s.stuck.length + s.longOverdue.length}`).join(" · "),
+          tag: `team-stuck-${today}`, url: "/?view=team",
+        },
+        { telegram: { html, buttons: teamBtn } }
+      );
+    }
+  }
+  return { sent: true, results };
 }
 
 // ---- גיבוי ----
@@ -187,9 +255,4 @@ async function backup(sb: Sb) {
   if (ids.length) await sb.from("journal_backups").delete().in("id", ids);
 
   return { saved: true, taskCount: tasks.length, pruned: ids.length };
-}
-
-function esc(s: string): string {
-  return String(s ?? "").replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }

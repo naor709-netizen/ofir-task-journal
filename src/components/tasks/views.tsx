@@ -10,7 +10,7 @@ import {
   STATUS_LABELS, STATUS_COLORS, NATURE_LABELS, NATURE_COLORS,
   HE_MONTHS, HE_WEEKDAYS_FULL,
 } from "@/lib/tasks";
-import { T, card, Ic, StatusIcon } from "./ui";
+import { T, card, alpha, Ic, StatusIcon } from "./ui";
 
 gsap.registerPlugin(Flip, useGSAP);
 
@@ -33,9 +33,12 @@ function SectionCard({ title, icon, badge, children }: {
 }) {
   return (
     <section className="tj-card" style={{ ...card, padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{ color: T.accent, display: "inline-flex" }}>{icon}</span>
-        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>{title}</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
+        <span style={{
+          width: 30, height: 30, borderRadius: 10, background: T.accentSoft, color: T.accent,
+          display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>{icon}</span>
+        <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>{title}</h2>
         {badge}
       </div>
       {children}
@@ -47,10 +50,12 @@ function MiniCard({ t, cat, todayKey, onOpen }: { t: Task; cat?: TaskCategory; t
   const done = isDone(t);
   const overdue = !done && t.dueDate && t.dueDate < todayKey;
   return (
-    <div onClick={() => onOpen(t.id)} style={{
-      background: T.bg2, border: `1px solid ${T.line}`,
-      borderInlineStart: `3px solid ${t.critical ? T.danger : (cat?.color ?? T.ink3)}`,
-      borderRadius: 10, padding: "8px 10px", cursor: "pointer",
+    <div onClick={() => onOpen(t.id)} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") onOpen(t.id); }}
+      style={{
+      background: t.critical ? alpha(T.danger, 6) : T.surface,
+      boxShadow: `inset 0 0 0 1px ${t.critical ? alpha(T.danger, 22) : T.line}`,
+      borderRadius: 11, padding: "8px 10px", cursor: "pointer",
       opacity: done ? 0.55 : 1,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -65,7 +70,11 @@ function MiniCard({ t, cat, todayKey, onOpen }: { t: Task; cat?: TaskCategory; t
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
         {t.critical && <span style={{ color: T.danger, display: "inline-flex" }}>{Ic.flame(10)}</span>}
-        {cat && <span style={{ fontSize: 9.5, color: cat.color }}>{cat.name}</span>}
+        {cat && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9.5, color: T.ink2 }}>
+            <span style={{ width: 6, height: 6, borderRadius: 99, background: cat.color }} />{cat.name}
+          </span>
+        )}
         {t.dueDate && (
           <span className="num" style={{ fontSize: 9.5, color: overdue ? T.danger : T.ink3 }}>
             {formatDateHe(t.dueDate)}{overdue ? " · באיחור" : ""}
@@ -117,8 +126,8 @@ export function WeekView({ roots, catById, todayKey, onOpen }: ViewProps) {
             const isToday = key === todayKey;
             return (
               <div key={key} style={{
-                background: T.bg2, borderRadius: 12, padding: 8, minHeight: 120,
-                border: `1px solid ${isToday ? T.accent : T.line}`,
+                background: isToday ? T.accentSoft : T.bg2, borderRadius: 14, padding: 8, minHeight: 120,
+                boxShadow: isToday ? `inset 0 0 0 1.5px ${T.accent}` : "none",
                 display: "flex", flexDirection: "column", gap: 6,
               }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
@@ -503,7 +512,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
                     width: "70%", maxWidth: 22,
                     height: `${(count / maxMonth) * 88}%`,
                     minHeight: count > 0 ? 4 : 1,
-                    background: count > 0 ? (hoverMonth === i ? "#1D4ED8" : T.accent) : T.surface2,
+                    background: count > 0 ? (hoverMonth === i ? `color-mix(in srgb, ${T.accent} 75%, var(--tj-chipmix))` : T.accent) : T.surface2,
                     borderRadius: "4px 4px 0 0",
                   }} />
                 </div>

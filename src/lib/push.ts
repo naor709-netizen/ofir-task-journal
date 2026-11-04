@@ -1,8 +1,10 @@
 "use client";
 
 // ============================================
-// Web Push — רישום מנוי להתראות שמגיעות גם כשהיומן סגור
+// Web Push + טלגרם — רישום ערוצי העדכונים של היומן הפעיל
 // ============================================
+
+import { MANAGER_ID } from "./journals";
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
@@ -43,7 +45,39 @@ export async function isSubscribed(): Promise<boolean> {
 
 export type PushResult = { ok: boolean; reason?: string };
 
-export async function enablePush(): Promise<PushResult> {
+async function registerOnServer(sub: PushSubscription, journalId: string): Promise<PushResult> {
+  try {
+    const res = await fetch("/api/push-subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription: sub.toJSON(), journalId }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      return { ok: false, reason: j?.error || `http-${res.status}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : "sync-failed" };
+  }
+}
+
+// בכל פתיחה: אם למכשיר יש מנוי — מרעננים אותו בשרת. מרפא מנוי שנמחק בצד השרת
+// (410 מהדפדפן, ניקוי ידני) ומצמיד את המכשיר ליומן הנכון.
+let synced = false;
+export async function syncPushSubscription(journalId: string = MANAGER_ID): Promise<void> {
+  if (synced || !pushSupported() || Notification.permission !== "granted") return;
+  synced = true;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    // עדכון ה-SW (גרסה חדשה עם pushsubscriptionchange) גם למכשירים שכבר רשומים
+    reg?.update().catch(() => { /* ignore */ });
+    const sub = reg && (await reg.pushManager.getSubscription());
+    if (sub) await registerOnServer(sub, journalId);
+  } catch { /* best-effort */ }
+}
+
+export async function enablePush(journalId: string = MANAGER_ID): Promise<PushResult> {
   if (!pushSupported()) return { ok: false, reason: "unsupported" };
   if (!VAPID_PUBLIC) return { ok: false, reason: "no-vapid" };
 
@@ -61,17 +95,7 @@ export async function enablePush(): Promise<PushResult> {
     });
   }
 
-  const json = sub.toJSON();
-  try {
-    const { supabase } = await import("./supabase");
-    const { error } = await supabase
-      .from("push_subscriptions")
-      .upsert({ endpoint: json.endpoint, subscription: json }, { onConflict: "endpoint" });
-    if (error) return { ok: false, reason: error.message };
-  } catch (e) {
-    return { ok: false, reason: e instanceof Error ? e.message : "sync-failed" };
-  }
-  return { ok: true };
+  return registerOnServer(sub, journalId);
 }
 
 export interface PushDiag {
@@ -80,13 +104,15 @@ export interface PushDiag {
   ios: boolean;
   vapidBaked: boolean;
   deviceSubscribed: boolean;
-  server: { vapidPublic: boolean; vapidPrivate: boolean; cronSecret: boolean; supabase: boolean } | null;
-  cloudSubscriptions: number | null; // null — הטבלה לא קיימת / שגיאה
+  deviceInCloud: boolean | null; // המנוי של המכשיר הזה קיים בענן
+  server: { vapidPublic: boolean; vapidPrivate: boolean; cronSecret: boolean; supabase: boolean; telegram?: boolean } | null;
+  cloudSubscriptions: number | null; // מכשירים של היומן הזה; null — הטבלה לא קיימת / שגיאה
   cloudError: string | null;
   heartbeatAt: string | null; // הרצת ה-cron האחרונה בשרת
+  pushErrors: { status: number | null; host: string }[] | null; // כשלי מסירה אחרונים מהשרת
 }
 
-export async function diagnosePush(): Promise<PushDiag> {
+export async function diagnosePush(journalId: string = MANAGER_ID): Promise<PushDiag> {
   const diag: PushDiag = {
     permission: pushPermission(),
     standalone: typeof window !== "undefined" &&
@@ -95,27 +121,35 @@ export async function diagnosePush(): Promise<PushDiag> {
     ios: typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent),
     vapidBaked: !!VAPID_PUBLIC,
     deviceSubscribed: await isSubscribed(),
+    deviceInCloud: null,
     server: null,
     cloudSubscriptions: null,
     cloudError: null,
     heartbeatAt: null,
+    pushErrors: null,
   };
 
-  try {
-    const res = await fetch("/api/send-reminders", { method: "GET" });
-    if (res.ok) diag.server = await res.json();
-  } catch {
-    /* offline / route missing */
-  }
+  const [server, health] = await Promise.all([
+    fetch("/api/send-reminders", { method: "GET" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch("/api/health", { cache: "no-store" }).then((r) => r.json()).catch(() => null),
+  ]);
+  diag.server = server;
+  diag.pushErrors = health?.pushErrors ?? null;
 
   try {
     const { supabase } = await import("./supabase");
+    const reg = pushSupported() ? await navigator.serviceWorker.getRegistration() : null;
+    const mine = reg ? (await reg.pushManager.getSubscription())?.endpoint ?? null : null;
     const [subsRes, hbRes] = await Promise.all([
-      supabase.from("push_subscriptions").select("endpoint", { count: "exact", head: true }),
+      supabase.from("push_subscriptions").select("endpoint,subscription"),
       supabase.from("reminders_sent").select("sent_at").eq("reminder_id", "__cron_heartbeat__").maybeSingle(),
     ]);
     if (subsRes.error) diag.cloudError = subsRes.error.message;
-    else diag.cloudSubscriptions = subsRes.count ?? 0;
+    else {
+      const rows = (subsRes.data ?? []) as { endpoint: string; subscription: { journalId?: string } }[];
+      diag.cloudSubscriptions = rows.filter((r) => (r.subscription?.journalId || MANAGER_ID) === journalId).length;
+      diag.deviceInCloud = mine ? rows.some((r) => r.endpoint === mine) : null;
+    }
     if (!hbRes.error && hbRes.data) diag.heartbeatAt = hbRes.data.sent_at;
   } catch (e) {
     diag.cloudError = e instanceof Error ? e.message : "cloud-unreachable";
@@ -152,15 +186,53 @@ export async function showLocalNotification(title: string, body: string, tag?: s
 }
 
 // שולח התראת-אמת דרך השרת לכל המכשירים הרשומים (בדיקת מסירה)
-export async function sendTestPush(): Promise<PushResult> {
+export async function sendTestPush(journalId: string = MANAGER_ID): Promise<PushResult & { telegram?: string; sms?: string; pushed?: number }> {
   try {
-    const res = await fetch("/api/test-push", { method: "POST" });
+    const res = await fetch("/api/test-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ journalId }),
+    });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, reason: json?.error || `http-${res.status}` };
-    if ((json?.sent ?? 0) === 0) return { ok: false, reason: json?.subscriptions ? "no-delivery" : "no-subscriptions" };
-    return { ok: true };
+    const anyDelivered = (json?.sent ?? 0) > 0 || json?.telegram === "sent" || json?.sms === "sent";
+    if (!anyDelivered) return { ok: false, reason: json?.subscriptions ? "no-delivery" : "no-subscriptions", telegram: json?.telegram, sms: json?.sms };
+    return { ok: true, telegram: json?.telegram, sms: json?.sms, pushed: json?.sent ?? 0 };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "failed" };
+  }
+}
+
+// ---------- טלגרם ----------
+
+export type TelegramStatus = {
+  configured: boolean;
+  username?: string | null;
+  webhook?: "ok" | "set" | "preview-skip" | "error";
+  linked?: { name: string | null; linkedAt: string } | null;
+  error?: string;
+};
+
+export async function telegramStatus(journalId: string): Promise<TelegramStatus> {
+  try {
+    const res = await fetch(`/api/telegram?journal=${encodeURIComponent(journalId)}`, { cache: "no-store" });
+    if (!res.ok) return { configured: false, error: `http-${res.status}` };
+    return await res.json();
+  } catch {
+    return { configured: false, error: "offline" };
+  }
+}
+
+export async function telegramAction(journalId: string, action: "link" | "unlink" | "test"): Promise<{ ok?: boolean; url?: string; error?: string }> {
+  try {
+    const res = await fetch("/api/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, journal: journalId }),
+    });
+    return await res.json();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "offline" };
   }
 }
 
@@ -172,10 +244,53 @@ export async function disablePush(): Promise<void> {
     if (sub) {
       const endpoint = sub.toJSON().endpoint;
       await sub.unsubscribe();
-      const { supabase } = await import("./supabase");
-      if (endpoint) await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+      if (endpoint) {
+        await fetch("/api/push-subscription", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint }),
+        });
+      }
     }
   } catch {
     /* best-effort */
+  }
+}
+
+// ---------- SMS (Twilio) ----------
+
+export type SmsStatus = {
+  configured: boolean;
+  linked?: { mask: string; linkedAt: string; readable: boolean } | null;
+  pending?: { mask: string } | null;
+  error?: string;
+};
+
+export async function smsStatus(journalId: string): Promise<SmsStatus> {
+  try {
+    const res = await fetch(`/api/sms?journal=${encodeURIComponent(journalId)}`, { cache: "no-store" });
+    if (!res.ok) return { configured: false, error: `http-${res.status}` };
+    return await res.json();
+  } catch {
+    return { configured: false, error: "offline" };
+  }
+}
+
+export type SmsActionResult = { ok?: boolean; mask?: string; error?: string; hint?: string; wait?: number; left?: number };
+
+export async function smsAction(
+  journalId: string,
+  action: "start" | "verify" | "unlink" | "test",
+  extra: { phone?: string; code?: string } = {}
+): Promise<SmsActionResult> {
+  try {
+    const res = await fetch("/api/sms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, journal: journalId, ...extra }),
+    });
+    return await res.json().catch(() => ({ error: `http-${res.status}` }));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "offline" };
   }
 }

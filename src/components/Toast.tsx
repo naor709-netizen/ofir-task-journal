@@ -28,12 +28,25 @@ export function useToast() {
   return ctx;
 }
 
-const ICONS = { success: "✓", error: "✕", info: "ℹ", warning: "⚠" };
+const PATHS: Record<ToastType, string> = {
+  success: "m6 12.5 4 4L18 8",
+  error: "M7 7l10 10M17 7 7 17",
+  info: "M12 11v6M12 7.5v.1",
+  warning: "M12 7v6M12 16.5v.1",
+};
+function ToastIcon({ type }: { type: ToastType }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={PATHS[type]} />
+    </svg>
+  );
+}
+// טוקנים של היומן — עובד גם בבהיר וגם בכהה
 const COLORS = {
-  success: { bg: "#DCFCE7", color: "#166534", border: "#86EFAC" },
-  error:   { bg: "#FEE2E2", color: "#991B1B", border: "#FCA5A5" },
-  info:    { bg: "#DBEAFE", color: "#1E40AF", border: "#93C5FD" },
-  warning: { bg: "#FEF3C7", color: "#854D0E", border: "#FCD34D" },
+  success: { tone: "var(--tj-mint, #0B9A76)" },
+  error:   { tone: "var(--tj-danger, #D42020)" },
+  info:    { tone: "var(--tj-accent, #2563EB)" },
+  warning: { tone: "var(--tj-amber, #B45309)" },
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -74,33 +87,35 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
   return (
     <div
       onClick={onDismiss}
+      role="status"
       style={{
-        background: c.bg, color: c.color,
-        border: `1px solid ${c.border}`,
-        padding: "10px 16px", borderRadius: 12,
-        fontSize: 14, fontWeight: 500,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+        background: "var(--tj-glass, rgba(255,255,255,0.9))", color: "var(--tj-ink, #13223B)",
+        backdropFilter: "blur(16px) saturate(1.5)", WebkitBackdropFilter: "blur(16px) saturate(1.5)",
+        border: "1px solid var(--tj-line, rgba(23,43,77,0.11))",
+        padding: "9px 14px 9px 10px", borderRadius: 16,
+        fontSize: 13.5, fontWeight: 500,
+        boxShadow: "inset 0 1px 0 var(--tj-bezel, #fff), 0 18px 40px -18px rgba(8,14,28,0.45)",
         display: "flex", alignItems: "center", gap: 10,
-        minWidth: 240, maxWidth: 480,
+        minWidth: 240, maxWidth: "min(480px, calc(100vw - 24px))",
         cursor: "pointer", pointerEvents: "auto",
         opacity: visible ? 1 : 0,
-        transform: visible ? "translateY(0)" : "translateY(-20px)",
-        transition: "all 0.3s ease",
+        transform: visible ? "translateY(0) scale(1)" : "translateY(-14px) scale(0.98)",
+        transition: "opacity .3s cubic-bezier(0.22,1,0.36,1), transform .4s cubic-bezier(0.22,1,0.36,1)",
       }}
     >
       <span style={{
-        width: 22, height: 22, borderRadius: "50%",
-        background: c.color, color: c.bg,
+        width: 24, height: 24, borderRadius: "50%",
+        background: `color-mix(in srgb, ${c.tone} 14%, transparent)`, color: c.tone,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontWeight: 600, fontSize: 12, flexShrink: 0,
-      }}>{ICONS[toast.type]}</span>
+        fontWeight: 700, fontSize: 12, flexShrink: 0,
+      }}><ToastIcon type={toast.type} /></span>
       <span style={{ flex: 1 }}>{toast.message}</span>
       {toast.action && (
         <button
           onClick={(e) => { e.stopPropagation(); toast.action!.onClick(); onDismiss(); }}
           style={{
-            background: c.color, color: c.bg, border: "none",
-            borderRadius: 8, padding: "5px 14px", fontSize: 12.5, fontWeight: 700,
+            background: `color-mix(in srgb, ${c.tone} 14%, transparent)`, color: c.tone, border: "none",
+            borderRadius: 99, padding: "5px 14px", fontSize: 12.5, fontWeight: 700,
             cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
           }}
         >

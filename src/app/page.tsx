@@ -1,5 +1,6 @@
-import TaskJournal from "@/components/tasks/TaskJournal";
+import JournalApp from "@/components/tasks/JournalApp";
+import { MANAGER_ID } from "@/lib/journals";
 
 export default function Page() {
-  return <TaskJournal />;
+  return <JournalApp journalId={MANAGER_ID} />;
 }

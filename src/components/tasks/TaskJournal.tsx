@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -9,24 +9,28 @@ import {
   type JournalData, type Task, type TaskCategory, type TaskNature, type TaskStatus,
   subscribeJournal, getJournalSnapshot, getServerJournalSnapshot, setJournalData,
   subscribeSyncState, getSyncState, getServerSyncState, getSyncDetail, initJournalSync,
-  emptyTask, uid, isDone,
+  emptyTask, uid, isDone, isManagerDevice,
   replaceTaskInTree, removeTaskFromTree, findTaskInTree, flattenTasks, countSubtasks,
   toDateKey, formatDateHe,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS,
   HE_MONTHS, HE_WEEKDAYS, HE_WEEKDAYS_FULL, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
-import { pushPermission, isSubscribed, enablePush, diagnosePush, showLocalNotification, sendTestPush } from "@/lib/push";
+import { pushPermission, isSubscribed, showLocalNotification, syncPushSubscription } from "@/lib/push";
+import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta, markManagerDevice } from "@/lib/team";
+import { MANAGER_ID, MANAGER_NAME, firstName, type PersonColor } from "@/lib/journals";
 import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
-import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon } from "./ui";
+import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, primaryBtn } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
+import { NotifyCenter } from "./NotifyCenter";
+import { TeamView } from "./TeamView";
 
 gsap.registerPlugin(useGSAP);
 
-type ViewKey = "dashboard" | "week" | "table" | "board" | "stats";
+type ViewKey = "dashboard" | "team" | "week" | "table" | "board" | "stats";
 
-const VIEWS: { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode }[] = [
+const BASE_VIEWS: { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode }[] = [
   { key: "dashboard", label: "דשבורד", icon: Ic.grid },
   { key: "week", label: "השבוע", icon: Ic.week },
   { key: "table", label: "טבלה", icon: Ic.table },
@@ -34,18 +38,37 @@ const VIEWS: { key: ViewKey; label: string; icon: (s?: number) => React.ReactNod
   { key: "stats", label: "אנליטיקות", icon: Ic.chart },
 ];
 
-export default function TaskJournal() {
+type StatusFilter = "all" | "active" | "progress" | "done";
+
+export default function TaskJournal({ journalId, personName, personColor }: {
+  journalId: string;
+  personName: string;
+  personColor: PersonColor;
+}) {
   const { toast } = useToast();
   const journal = useSyncExternalStore(subscribeJournal, getJournalSnapshot, getServerJournalSnapshot);
   const syncState = useSyncExternalStore(subscribeSyncState, getSyncState, getServerSyncState);
+  const teamMeta = useSyncExternalStore(subscribeTeamMeta, getTeamMeta, getServerTeamMeta);
+  const isManager = journalId === MANAGER_ID;
 
-  const [view, setView] = useState<ViewKey>("dashboard");
+  const VIEWS = useMemo(
+    () => (isManager ? [BASE_VIEWS[0], { key: "team" as ViewKey, label: "הצוות", icon: Ic.users }, ...BASE_VIEWS.slice(1)] : BASE_VIEWS),
+    [isManager]
+  );
+  // קישורים מהתראות: /?view=team (היומן לא מצויר בשרת — אין חשש לאי-התאמה)
+  const [view, setView] = useState<ViewKey>(() => {
+    if (typeof window === "undefined") return "dashboard";
+    const v = new URLSearchParams(window.location.search).get("view") as ViewKey | null;
+    return v && VIEWS.some((x) => x.key === v) ? v : "dashboard";
+  });
+  useEffect(() => { if (isManager) markManagerDevice(); }, [isManager]);
 
   // filters
   const [catFilter, setCatFilter] = useState<Set<string>>(new Set());
   const [natureFilter, setNatureFilter] = useState<Set<TaskNature>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "done">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [criticalOnly, setCriticalOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -57,6 +80,7 @@ export default function TaskJournal() {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [freshId, setFreshId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   // add category (sidebar)
   const [newCatName, setNewCatName] = useState("");
@@ -88,74 +112,14 @@ export default function TaskJournal() {
       if (perm === "denied") { if (!cancelled) setPushState("denied"); return; }
       const sub = await isSubscribed();
       if (!cancelled) setPushState(sub && perm === "granted" ? "on" : "off");
+      // מרענן את המנוי בשרת בכל פתיחה — מרפא מכשירים שנמחקו ומצמיד ליומן הנכון
+      if (sub) syncPushSubscription(journalId);
     })();
     return () => { cancelled = true; };
-  }, []);
-  const [testingPush, setTestingPush] = useState(false);
-  async function showPushDiag() {
-    toast("בודק את מערך ההתראות…", "info");
-    const d = await diagnosePush();
-    const yes = "✓", no = "✗";
-    const lines: string[] = ["אבחון התראות", ""];
-    lines.push(
-      `הרשאת דפדפן: ${d.permission === "granted" ? `${yes} אושרה` : d.permission === "denied" ? `${no} נדחתה` : d.permission === "unsupported" ? `${no} לא נתמך` : "○ טרם נתבקשה"}`
-    );
-    lines.push(`המכשיר הזה רשום להתראות: ${d.deviceSubscribed ? yes : no}`);
-    lines.push(`מפתח VAPID בבנייה: ${d.vapidBaked ? yes : `${no} חסר NEXT_PUBLIC_VAPID_PUBLIC_KEY`}`);
-    lines.push(
-      d.server
-        ? `הגדרות שרת: מפתח פרטי ${d.server.vapidPrivate ? yes : no} · CRON_SECRET ${d.server.cronSecret ? yes : no} · Supabase ${d.server.supabase ? yes : no}`
-        : `הגדרות שרת: ${no} הנתיב /api/send-reminders לא זמין`
-    );
-    lines.push(
-      d.cloudSubscriptions === null
-        ? `טבלאות ההתראות ב-Supabase: ${no} ${d.cloudError ?? "לא קיימות"}`
-        : `מכשירים רשומים בענן: ${d.cloudSubscriptions}`
-    );
-    const hbAgeMin = d.heartbeatAt ? Math.round((Date.now() - new Date(d.heartbeatAt).getTime()) / 60000) : null;
-    lines.push(
-      hbAgeMin === null
-        ? `שרת התזכורות (cron): ${no} מעולם לא רץ`
-        : `שרת התזכורות (cron): רץ לאחרונה לפני ${hbAgeMin} דק׳ ${hbAgeMin <= 3 ? yes : no}`
-    );
-    lines.push("");
-    if (!d.vapidBaked || (d.server && (!d.server.vapidPrivate || !d.server.cronSecret))) {
-      lines.push("← הבעיה: חסרים משתני VAPID/CRON_SECRET ב-Vercel. יש להוסיף אותם ולפרוס מחדש (README, שלב 1).");
-    } else if (d.cloudSubscriptions === null) {
-      lines.push("← הבעיה: יש להריץ את supabase-reminders.sql ב-SQL Editor של Supabase (README, שלב 2).");
-    } else if (hbAgeMin === null) {
-      lines.push("← הבעיה: משימת ה-cron לא רצה מעולם. יש להפעיל את התוספים pg_cron ו-pg_net ב-Supabase ולהריץ את supabase-reminders.sql (README, שלב 2).");
-    } else if (hbAgeMin > 3) {
-      lines.push(`← הבעיה: ה-cron הפסיק לרוץ (לפני ${hbAgeMin} דק׳). יש לבדוק את המשימה ofir-reminders ב-Supabase ואת כתובת הפריסה בקובץ ה-SQL.`);
-    } else if (d.permission !== "granted" || !d.deviceSubscribed) {
-      lines.push(d.ios && !d.standalone
-        ? "← הבעיה: באייפון התראות עובדות רק כשהיומן מותקן — שיתוף ← הוסף למסך הבית, ואז \"הפעל התראות\" מתוך האפליקציה."
-        : "← הבעיה: המכשיר הזה לא רשום — יש ללחוץ \"הפעל התראות\" ולאשר.");
-    } else if (d.cloudSubscriptions === 0) {
-      lines.push("← הבעיה: אף מכשיר לא רשום בענן — יש ללחוץ \"הפעל התראות\" מחדש.");
-    } else {
-      lines.push("← הכול תקין: תזכורות יגיעו גם כשהיומן סגור.");
-    }
-    // אם הכול מוגדר — שולחים גם התראת-אמת מיידית, שהמשתמש יראה שהמסירה עובדת בפועל
-    if (d.deviceSubscribed && d.vapidBaked && d.cloudSubscriptions && d.cloudSubscriptions > 0) {
-      const t = await sendTestPush();
-      lines.push("");
-      lines.push(t.ok
-        ? "התראת בדיקה נשלחה עכשיו ✓ — אמורה להופיע כהתראת מערכת תוך כמה שניות."
-        : `שליחת התראת בדיקה נכשלה ✗ (${t.reason ?? ""})`);
-    }
-    alert(lines.join("\n"));
-  }
-
-  async function togglePush() {
-    if (pushState !== "off") { setTestingPush(true); await showPushDiag(); setTestingPush(false); return; }
-    const r = await enablePush();
-    if (r.ok) { setPushState("on"); toast("התראות הופעלו — תזכורות יגיעו גם כשהיומן סגור", "success"); }
-    else if (r.reason === "denied") { setPushState("denied"); toast("ההרשאה נדחתה — יש לאשר התראות בהגדרות הדפדפן", "error"); }
-    else if (r.reason === "unsupported") { setPushState("unsupported"); await showPushDiag(); }
-    else if (r.reason === "no-vapid") { await showPushDiag(); }
-    else { toast("הפעלת ההתראות נכשלה: " + (r.reason ?? ""), "error"); }
-  }
+  }, [journalId]);
+  const smsLinked = !!teamMeta.sms[journalId];
+  const telegramLinked = !!teamMeta.telegram[journalId];
+  const phoneReady = telegramLinked || pushState === "on" || smsLinked;
 
   function persist(next: JournalData) {
     if (!setJournalData(next)) toast("השמירה נכשלה — ייתכן שהקבצים המצורפים גדולים מדי", "error");
@@ -169,10 +133,6 @@ export default function TaskJournal() {
       setNowTick(now);
       const j = getJournalSnapshot();
       if (!j) return;
-      if (flattenTasks(j.tasks).some((t) => t.reminders.length > 0) &&
-          typeof Notification !== "undefined" && Notification.permission === "default") {
-        Notification.requestPermission();
-      }
       let changed = false;
       let tasks = j.tasks;
       for (const t of flattenTasks(tasks)) {
@@ -186,7 +146,7 @@ export default function TaskJournal() {
             tasks = replaceTaskInTree(tasks, updated);
             const body = r.note || t.title;
             toast(`תזכורת: ${body}`, "info");
-            showLocalNotification("יומן המשימות של אופיר", body, r.id);
+            showLocalNotification(`היומן של ${personName}`, body, r.id);
           }
         }
       }
@@ -195,7 +155,7 @@ export default function TaskJournal() {
     const t = setTimeout(check, 800);
     const iv = setInterval(check, 20000);
     return () => { clearTimeout(t); clearInterval(iv); };
-  }, [toast]);
+  }, [toast, personName]);
 
   // ---- derived ----
   const categories = useMemo(() => journal?.categories ?? [], [journal]);
@@ -217,7 +177,9 @@ export default function TaskJournal() {
     return s;
   }, [catFilter, categories]);
 
-  const filteredTasks = useMemo(() => {
+  const todayKey = toDateKey(today);
+
+  const baseFiltered = useMemo(() => {
     // חיפוש סלחני: לא תלוי רישיות או סדר מילים — כל מילה צריכה להופיע איפשהו במשימה
     const qWords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     // שלבים הם משימות לכל דבר — שורש עובר סינון אם הוא או אחד השלבים שלו עונה על כל התנאים
@@ -225,6 +187,7 @@ export default function TaskJournal() {
       if (expandedCatFilter.size > 0 && !(t.categoryId && expandedCatFilter.has(t.categoryId))) return false;
       if (natureFilter.size > 0 && !(t.nature && natureFilter.has(t.nature))) return false;
       if (statusFilter === "active" && isDone(t)) return false;
+      if (statusFilter === "progress" && t.status !== "in_progress") return false;
       if (statusFilter === "done" && !isDone(t)) return false;
       if (criticalOnly && !t.critical) return false;
       if (selectedDate && t.dueDate !== selectedDate && t.endDate !== selectedDate) return false;
@@ -246,6 +209,9 @@ export default function TaskJournal() {
       return true;
     });
   }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate, catById]);
+  const filteredTasks = overdueOnly
+    ? baseFiltered.filter((root) => [root, ...flattenTasks(root.subtasks)].some((t) => !isDone(t) && t.dueDate && t.dueDate < todayKey))
+    : baseFiltered;
 
   const criticalTasks = filteredTasks.filter((t) => t.critical && !isDone(t));
   // משימות שהושלמו לא נשארות ברשימה הראשית — הן עוברות לרשימה מרוכזת מתחת ללוח השנה
@@ -255,7 +221,6 @@ export default function TaskJournal() {
   const activeCount = filteredTasks.length - doneTasks.length;
 
   const allFlat = useMemo(() => flattenTasks(journal?.tasks ?? []), [journal]);
-  const todayKey = toDateKey(today);
   const openCount = allFlat.filter((t) => !isDone(t)).length;
   const inProgressCount = allFlat.filter((t) => t.status === "in_progress").length;
   const criticalCount = allFlat.filter((t) => t.critical && !isDone(t)).length;
@@ -276,7 +241,7 @@ export default function TaskJournal() {
     const todays = allFlat.filter((t) => t.dueDate === todayKey);
     const overdue = allFlat.filter((t) => !isDone(t) && t.dueDate && t.dueDate < todayKey);
     const lines = [
-      `📋 היומן של אופיר — יום ${HE_WEEKDAYS_FULL[today.getDay()]} ${today.getDate()}.${today.getMonth() + 1}`,
+      `📋 היומן של ${personName} — יום ${HE_WEEKDAYS_FULL[today.getDay()]} ${today.getDate()}.${today.getMonth() + 1}`,
       "",
       ...(todays.length
         ? todays.map((t) => `${isDone(t) ? "✅" : t.critical ? "🔴" : "◻️"} ${t.title}${t.status === "in_progress" ? " (בתהליך)" : ""}`)
@@ -295,6 +260,7 @@ export default function TaskJournal() {
   const upcomingReminders = useMemo(() => {
     if (!nowTick) return [];
     return allFlat
+      .filter((t) => !isDone(t))
       .flatMap((t) => t.reminders.filter((r) => !r.fired && new Date(r.datetime).getTime() >= nowTick)
         .map((r) => ({ task: t, r })))
       .sort((a, b) => a.r.datetime.localeCompare(b.r.datetime))
@@ -409,6 +375,7 @@ export default function TaskJournal() {
 
   // ---- quick add — עברית חופשית ----
   const [quickText, setQuickText] = useState("");
+  const quickPreview = useMemo(() => (quickText.trim() ? parseQuickAdd(quickText) : null), [quickText]);
   function quickAdd() {
     if (!journal || !quickText.trim()) return;
     const p = parseQuickAdd(quickText);
@@ -436,11 +403,16 @@ export default function TaskJournal() {
     setter(n);
   }
 
+  function clearFilters() {
+    setCatFilter(new Set()); setNatureFilter(new Set()); setStatusFilter("all");
+    setCriticalOnly(false); setOverdueOnly(false); setSearch(""); setSelectedDate(null);
+  }
+
   const openRoot = openTaskId && journal
     ? journal.tasks.find((root) => [root, ...flattenTasks(root.subtasks)].some((t) => t.id === openTaskId)) ?? null
     : null;
 
-  const filtersActive = catFilter.size > 0 || natureFilter.size > 0 || statusFilter !== "all" || criticalOnly || !!search.trim() || !!selectedDate;
+  const filtersActive = catFilter.size > 0 || natureFilter.size > 0 || statusFilter !== "all" || criticalOnly || overdueOnly || !!search.trim() || !!selectedDate;
 
   // ---- GSAP choreography ----
   const rootRef = useRef<HTMLDivElement>(null);
@@ -452,16 +424,15 @@ export default function TaskJournal() {
     entranceDone.current = true;
     const mm = gsap.matchMedia();
     mm.add("(prefers-reduced-motion: no-preference)", () => {
-      const tl = gsap.timeline({ defaults: { ease: "power3.out", duration: 0.55 } });
-      tl.from("header", { y: -16, opacity: 0, duration: 0.4, clearProps: "opacity,transform" })
-        .from(".tj-toolbar", { y: 12, opacity: 0, duration: 0.4, clearProps: "opacity,transform" }, "-=0.22")
-        .from(".tj-kpis > div", { y: 20, opacity: 0, stagger: 0.06, clearProps: "opacity,transform" }, "-=0.2")
-        .from(".tj-layout .tj-card", { y: 24, opacity: 0, stagger: 0.07, clearProps: "opacity,transform" }, "-=0.38");
+      const tl = gsap.timeline({ defaults: { ease: "power3.out", duration: 0.5 } });
+      tl.from(".tj-header", { y: -12, opacity: 0, duration: 0.36, clearProps: "opacity,transform" })
+        .from(".tj-toolbar", { y: 10, opacity: 0, duration: 0.36, clearProps: "opacity,transform" }, "-=0.2")
+        .from(".tj-main > *", { y: 18, opacity: 0, stagger: 0.05, clearProps: "opacity,transform" }, "-=0.18");
       gsap.utils.toArray<HTMLElement>(".tj-kpi-num").forEach((el) => {
         const end = parseInt(el.textContent || "0", 10) || 0;
         if (end > 0) {
           gsap.fromTo(el, { textContent: 0 },
-            { textContent: end, duration: 0.9, delay: 0.3, ease: "power2.out", snap: { textContent: 1 } });
+            { textContent: end, duration: 0.9, delay: 0.25, ease: "power2.out", snap: { textContent: 1 } });
         }
       });
     });
@@ -473,8 +444,8 @@ export default function TaskJournal() {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) return;
     gsap.fromTo(".tj-main",
-      { opacity: 0, y: 10 },
-      { opacity: 1, y: 0, duration: 0.32, ease: "power2.out", clearProps: "opacity,transform" });
+      { opacity: 0, y: 8, filter: "blur(4px)" },
+      { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.34, ease: "power2.out", clearProps: "opacity,transform,filter" });
   }, { scope: rootRef, dependencies: [view] });
 
   const sync = {
@@ -484,111 +455,104 @@ export default function TaskJournal() {
     error:   { icon: Ic.alert(13),    label: "שגיאת סנכרון", color: T.danger },
   }[syncState];
 
+  function showSyncDiag() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    alert(
+      `אבחון סנכרון\n` +
+      `מצב: ${sync.label}\n` +
+      `כתובת Supabase בבנייה: ${url || "❌ חסרה"}\n` +
+      `מפתח anon בבנייה: ${key ? "✓ קיים (" + key.slice(0, 12) + "…)" : "❌ חסר"}\n` +
+      `שגיאה אחרונה: ${getSyncDetail() || "אין"}`
+    );
+  }
+
+  const header = (
+    <Header
+      sync={sync} onSyncClick={showSyncDiag}
+      personName={personName} personColor={personColor} isManager={isManager}
+      teamCount={teamMeta.roster.members.length}
+    />
+  );
+
   if (!journal) {
     return (
-      <div style={{ minHeight: "100vh", background: T.bg }}>
-        <Header sync={sync} />
-        <div style={{ padding: 40, display: "grid", gap: 12 }}>
-          <div style={{ height: 110, borderRadius: 16, background: T.surface }} />
-          <div style={{ height: 340, borderRadius: 16, background: T.surface }} />
+      <div style={{ minHeight: "100vh" }}>
+        {header}
+        <div style={{ maxWidth: 1252, margin: "0 auto", padding: "16px 18px", display: "grid", gap: 14 }}>
+          <div className="tj-skel" style={{ height: 52 }} />
+          <div className="tj-skel" style={{ height: 190 }} />
+          <div className="tj-skel" style={{ height: 340 }} />
         </div>
       </div>
     );
   }
 
+  const isTeam = view === "team";
+
   return (
     <div ref={rootRef} style={{ minHeight: "100vh", color: T.ink }}>
-      <Header sync={sync} />
+      {header}
 
-      {/* ===== toolbar: view tabs + new task ===== */}
+      {/* ===== סרגל פקודות צף: טאבים + פעולות ===== */}
       <div className="tj-toolbar" style={{
-        maxWidth: 1252, margin: "12px auto 0", padding: "8px 10px",
+        maxWidth: 1252, margin: "12px auto 0", padding: "7px 8px",
         display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
         position: "sticky", top: 8, zIndex: 40,
         background: "var(--tj-glass)",
-        backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-        border: `1px solid ${T.line}`, borderRadius: 20,
-        boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 12px 32px -16px var(--tj-shadow-strong)",
+        backdropFilter: "blur(18px) saturate(1.5)", WebkitBackdropFilter: "blur(18px) saturate(1.5)",
+        border: `1px solid ${T.line}`, borderRadius: 22,
+        boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 14px 34px -18px var(--tj-shadow-strong)",
       }}>
-        <nav className="no-scrollbar" style={{
-          display: "flex", gap: 2, background: T.surface, border: `1px solid ${T.line}`,
-          borderRadius: 12, padding: 3, overflowX: "auto", maxWidth: "100%", boxShadow: T.shadowSm,
-        }}>
-          {VIEWS.map((v) => {
-            const active = view === v.key;
-            return (
-              <button key={v.key} onClick={() => setView(v.key)} style={{
-                display: "inline-flex", alignItems: "center", gap: 7,
-                background: active ? "linear-gradient(135deg, rgba(37,99,235,0.14), rgba(15,164,126,0.12))" : "transparent",
-                color: active ? T.ink : T.ink2,
-                border: "none", borderRadius: 9, padding: "8px 14px",
-                fontSize: 13, fontWeight: active ? 700 : 400, cursor: "pointer",
-                whiteSpace: "nowrap", fontFamily: "inherit",
-                boxShadow: active ? `inset 0 0 0 1px ${T.accent}3A` : "none",
-              }}>
-                <span style={{ color: active ? T.accent : T.ink3, display: "inline-flex" }}>{v.icon(15)}</span>
-                {v.label}
-              </button>
-            );
-          })}
-        </nav>
+        <ViewTabs views={VIEWS} view={view} onChange={setView} />
 
-        <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            title="לחיצה מציגה אבחון סנכרון"
-            onClick={() => {
-              const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-              const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-              alert(
-                `אבחון סנכרון\n` +
-                `מצב: ${sync.label}\n` +
-                `כתובת Supabase בבנייה: ${url || "❌ חסרה"}\n` +
-                `מפתח anon בבנייה: ${key ? "✓ קיים (" + key.slice(0, 12) + "…)" : "❌ חסר"}\n` +
-                `שגיאה אחרונה: ${getSyncDetail() || "אין"}`
-              );
-            }}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5,
-              color: sync.color, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 12px",
-              background: "transparent", cursor: "pointer", fontFamily: "inherit",
-            }}>
-            {sync.icon}{sync.label}
-          </button>
-          <button onClick={toggleTheme} title={theme === "dark" ? "מעבר למצב בהיר" : "מעבר למצב כהה"} style={{
+        <div className="tj-actions" style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={toggleTheme} aria-label={theme === "dark" ? "מעבר למצב בהיר" : "מעבר למצב כהה"} title={theme === "dark" ? "מעבר למצב בהיר" : "מעבר למצב כהה"} style={{
             display: "inline-flex", alignItems: "center", justifyContent: "center",
-            width: 30, height: 30, borderRadius: 99, border: `1px solid ${T.line}`,
-            background: "transparent", color: T.ink2, cursor: "pointer",
+            width: 34, height: 34, borderRadius: 99, border: `1px solid ${T.line}`,
+            background: T.surface, color: T.ink2, cursor: "pointer", flexShrink: 0,
           }}>
-            {theme === "dark" ? Ic.sun(14) : Ic.moon(14)}
+            {theme === "dark" ? Ic.sun(15) : Ic.moon(15)}
           </button>
-          <button onClick={togglePush} disabled={testingPush}
-            title={pushState === "on" ? "התראות פעילות — לחיצה מריצה אבחון ושולחת התראת בדיקה" : pushState === "off" ? "הפעלת התראות" : "לחיצה מציגה אבחון התראות"}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontFamily: "inherit",
-              border: `1px solid ${pushState === "on" ? `${alpha(T.mint, 40)}` : T.line}`, borderRadius: 99, padding: "5px 12px",
-              background: pushState === "on" ? T.mintSoft : "transparent",
-              color: pushState === "on" ? T.mint : pushState === "denied" ? T.danger : T.ink2,
-              cursor: testingPush ? "default" : "pointer", opacity: testingPush ? 0.6 : 1,
-            }}>
-            {Ic.bell(13)} {testingPush ? "בודק…" : pushState === "on" ? "התראות פעילות" : pushState === "denied" ? "התראות חסומות" : pushState === "unsupported" ? "התראות — נדרשת התקנה" : "הפעל התראות"}
-          </button>
-          <button onClick={createTask} className="tj-newbtn" style={{
-            display: "inline-flex", alignItems: "center", gap: 9,
-            background: T.grad, color: "#fff", border: "none", borderRadius: 99,
-            padding: "7px 8px 7px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
-            fontFamily: "var(--font-display)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25), 0 10px 24px -10px rgba(29,79,215,0.65)",
+          <button onClick={() => setNotifyOpen(true)} title="התראות לטלפון" style={{
+            display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+            height: 34, padding: "0 13px", borderRadius: 99, cursor: "pointer", flexShrink: 0,
+            border: `1px solid ${phoneReady ? alpha(T.mint, 40) : T.line}`,
+            background: phoneReady ? T.mintSoft : T.surface,
+            color: phoneReady ? T.mint : T.ink2,
           }}>
-            <span className="tj-newbtn-orb" style={{
-              width: 26, height: 26, borderRadius: 99, background: "rgba(255,255,255,0.18)",
-              display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            }}>{Ic.plus(14)}</span>
-            משימה חדשה
+            <span style={{ position: "relative", display: "inline-flex" }}>
+              {Ic.bell(14)}
+              <span style={{
+                position: "absolute", top: -2, insetInlineEnd: -2, width: 7, height: 7, borderRadius: 99,
+                background: phoneReady ? T.mint : T.amber, boxShadow: `0 0 0 2px ${T.surface}`,
+              }} />
+            </span>
+            <span className="tj-notify-label">{phoneReady ? (telegramLinked ? "טלגרם מחובר" : pushState === "on" ? "התראות פעילות" : "SMS מחובר") : "התראות לטלפון"}</span>
           </button>
+          {!isTeam && (
+            <button onClick={createTask} className="tj-newbtn" style={{ ...primaryBtn, padding: "6px 7px 6px 18px", height: 40 }}>
+              <span className="tj-newbtn-orb" style={{
+                width: 27, height: 27, borderRadius: 99, background: "rgba(255,255,255,0.2)",
+                display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>{Ic.plus(14)}</span>
+              משימה חדשה
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ===== body ===== */}
+      {isTeam ? (
+        <div className="tj-layout" style={{ maxWidth: 1280, margin: "0 auto", padding: "16px 18px 60px" }}>
+          <main className="tj-main" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <TeamView
+              todayKey={todayKey}
+              onOpenOwnTask={(id) => setOpenTaskId(id)}
+              onOpenNotify={() => setNotifyOpen(true)}
+            />
+          </main>
+        </div>
+      ) : (
       <div className="tj-layout" style={{
         maxWidth: 1280, margin: "0 auto", padding: "16px 18px 60px",
         display: "flex", gap: 16, alignItems: "flex-start",
@@ -596,19 +560,16 @@ export default function TaskJournal() {
 
         {/* ---- sidebar ---- */}
         <aside className={sidebarOpen ? "tj-card" : "tj-sidebar tj-card"} style={{
-          ...card, width: 258, flexShrink: 0, padding: 16,
-          position: "sticky", top: 14,
+          ...card, width: 260, flexShrink: 0, padding: 16,
+          position: "sticky", top: 70,
           display: sidebarOpen ? "block" : undefined,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12, color: T.ink2, fontSize: 12, fontWeight: 600 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12, color: T.ink2, fontSize: 12.5, fontWeight: 700 }}>
             {Ic.filter(14)} סינון
             {filtersActive && (
-              <button onClick={() => {
-                setCatFilter(new Set()); setNatureFilter(new Set()); setStatusFilter("all");
-                setCriticalOnly(false); setSearch(""); setSelectedDate(null);
-              }} style={{
+              <button onClick={clearFilters} style={{
                 marginInlineStart: "auto", background: "none", border: "none",
-                color: T.accent, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+                color: T.accent, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
               }}>
                 ניקוי
               </button>
@@ -616,21 +577,18 @@ export default function TaskJournal() {
           </div>
 
           <button className="tj-apply-mobile" onClick={() => { setSidebarOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{
-            display: "none", width: "100%", alignItems: "center", justifyContent: "center", gap: 8,
-            background: T.grad, color: "#fff", border: "none", borderRadius: 11,
-            padding: "11px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
-            fontFamily: "var(--font-display)", marginBottom: 14,
+            ...primaryBtn, display: "none", width: "100%", borderRadius: 14, padding: "11px 0", marginBottom: 14,
           }}>
             הצגת {filteredTasks.length} תוצאות {Ic.chevL(15)}
           </button>
 
           <div style={{ position: "relative", marginBottom: 10 }}>
             {/* בלי pointer-events האייקון בולע הקשות על השדה בנייד */}
-            <span style={{ position: "absolute", insetInlineStart: 10, top: "50%", transform: "translateY(-50%)", color: T.ink3, pointerEvents: "none" }}>
+            <span style={{ position: "absolute", insetInlineStart: 11, top: "50%", transform: "translateY(-50%)", color: T.ink3, pointerEvents: "none" }}>
               {Ic.search(14)}
             </span>
             <input
-              type="search" inputMode="search" placeholder="חיפוש משימה…" value={search}
+              type="search" inputMode="search" placeholder="חיפוש משימה…" value={search} aria-label="חיפוש משימה"
               onChange={(e) => { setSearch(e.target.value); if (selectedDate) setSelectedDate(null); }}
               onKeyDown={(e) => {
                 // מקש "חיפוש" במקלדת של הנייד = Enter — מיישם את הסינון ומציג את התוצאות
@@ -640,7 +598,7 @@ export default function TaskJournal() {
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }
               }}
-              style={{ ...inputStyle, width: "100%", paddingInlineStart: 32 }}
+              style={{ ...inputStyle, width: "100%", paddingInlineStart: 33 }}
             />
           </div>
 
@@ -648,7 +606,7 @@ export default function TaskJournal() {
           {search.trim() !== "" && (
             <div className="tj-search-live" style={{
               display: "none", flexDirection: "column", gap: 5, marginBottom: 14,
-              background: T.bg2, border: `1px solid ${T.line}`, borderRadius: 11, padding: 10,
+              background: T.bg2, borderRadius: 13, padding: 10,
             }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: filteredTasks.length === 0 ? T.danger : T.ink2 }}>
                 {filteredTasks.length === 0 ? "לא נמצאו משימות תואמות" : `נמצאו ${filteredTasks.length} משימות — הקשה פותחת:`}
@@ -656,7 +614,7 @@ export default function TaskJournal() {
               {filteredTasks.slice(0, 5).map((t) => (
                 <button key={t.id} onClick={() => setOpenTaskId(t.id)} style={{
                   display: "flex", alignItems: "center", gap: 8, textAlign: "start",
-                  background: T.surface, border: `1px solid ${T.line}`, borderRadius: 9,
+                  background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
                   padding: "8px 10px", fontSize: 12.5, fontWeight: 500, color: T.ink,
                   cursor: "pointer", fontFamily: "inherit",
                 }}>
@@ -678,7 +636,7 @@ export default function TaskJournal() {
           )}
 
           <SectionTitle>קטגוריות</SectionTitle>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 10 }}>
             {[...categories.filter((c) => !c.parentId).flatMap((parent) => [parent, ...categories.filter((k) => k.parentId === parent.id)])].map((c) => {
               const active = catFilter.has(c.id);
               const count = filteredCountByCat(journal.tasks, c.id);
@@ -686,26 +644,27 @@ export default function TaskJournal() {
                 <div key={c.id} className="tj-catrow" style={{ display: "flex", alignItems: "center", gap: 2, paddingInlineStart: c.parentId ? 18 : 0 }}>
                   <button
                     onClick={() => toggleSet(catFilter, c.id, setCatFilter)}
+                    aria-pressed={active}
                     style={{
                       flex: 1, display: "flex", alignItems: "center", gap: 9, textAlign: "start",
-                      background: active ? `${c.color}1C` : "transparent",
-                      border: `1px solid ${active ? `${c.color}66` : "transparent"}`,
-                      borderRadius: 9, padding: "7px 10px", cursor: "pointer",
-                      fontSize: 12.5, fontWeight: active ? 600 : 400,
+                      background: active ? alpha(c.color, 12) : "transparent",
+                      border: `1px solid ${active ? alpha(c.color, 40) : "transparent"}`,
+                      borderRadius: 10, padding: "7px 10px", cursor: "pointer",
+                      fontSize: 12.5, fontWeight: active ? 600 : 500,
                       color: active ? T.ink : T.ink2, fontFamily: "inherit",
                     }}>
-                    <span style={{ width: c.parentId ? 7 : 9, height: c.parentId ? 7 : 9, borderRadius: 3, background: c.color, flexShrink: 0 }} />
+                    <span style={{ width: c.parentId ? 7 : 9, height: c.parentId ? 7 : 9, borderRadius: 99, background: c.color, flexShrink: 0, boxShadow: `0 0 0 3px ${alpha(c.color, 16)}` }} />
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: c.parentId ? 12 : undefined }}>{c.name}</span>
                     <span className="num" style={{ fontSize: 10.5, color: T.ink3 }}>{count}</span>
                   </button>
                   {!c.parentId && (
-                    <button title="הוספת תת-קטגוריה" onClick={() => { setNewCatParent(c.id); setNewCatName(""); }}
+                    <button title="הוספת תת-קטגוריה" aria-label={`הוספת תת-קטגוריה ל${c.name}`} onClick={() => { setNewCatParent(c.id); setNewCatName(""); }}
                       className="tj-catdel"
                       style={{ background: "transparent", border: "none", color: T.accent, cursor: "pointer", padding: 4, borderRadius: 6 }}>
                       {Ic.plus(11)}
                     </button>
                   )}
-                  <button title="מחיקת קטגוריה" onClick={() => deleteCategory(c.id)}
+                  <button title="מחיקת קטגוריה" aria-label={`מחיקת הקטגוריה ${c.name}`} onClick={() => deleteCategory(c.id)}
                     className="tj-catdel"
                     style={{ background: "transparent", border: "none", color: T.ink3, cursor: "pointer", padding: 4, borderRadius: 6 }}>
                     {Ic.x(11)}
@@ -716,12 +675,12 @@ export default function TaskJournal() {
           </div>
 
           {/* add category */}
-          <div style={{ background: T.bg2, border: `1px solid ${T.line}`, borderRadius: 11, padding: 10, marginBottom: 18 }}>
+          <div style={{ background: T.bg2, borderRadius: 14, padding: 11, marginBottom: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: T.ink2, marginBottom: 7, display: "flex", alignItems: "center", gap: 5 }}>
               {Ic.plus(12)}
               {newCatParent && catById[newCatParent]
                 ? <>תת-קטגוריה בתוך <b style={{ color: catById[newCatParent].color }}>{catById[newCatParent].name}</b>
-                    <button onClick={() => setNewCatParent(null)} title="ביטול"
+                    <button onClick={() => setNewCatParent(null)} title="ביטול" aria-label="ביטול"
                       style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", display: "inline-flex", padding: 2 }}>
                       {Ic.x(10)}
                     </button>
@@ -729,33 +688,33 @@ export default function TaskJournal() {
                 : "קטגוריה חדשה"}
             </div>
             <input
-              placeholder="שם הקטגוריה" value={newCatName}
+              placeholder="שם הקטגוריה" value={newCatName} aria-label="שם הקטגוריה"
               onChange={(e) => setNewCatName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && newCatName.trim()) { addCategory(newCatName, newCatColor, newCatParent); setNewCatName(""); setNewCatParent(null); } }}
               style={{ ...inputStyle, width: "100%", padding: "7px 10px", fontSize: 12, marginBottom: 8 }}
             />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
               {CATEGORY_COLOR_CHOICES.map((col) => (
-                <button key={col} onClick={() => setNewCatColor(col)} style={{
-                  width: 18, height: 18, borderRadius: 6, background: col, cursor: "pointer",
+                <button key={col} onClick={() => setNewCatColor(col)} aria-label={`צבע ${col}`} style={{
+                  width: 18, height: 18, borderRadius: 99, background: col, cursor: "pointer",
                   border: "none",
                   outline: newCatColor === col ? `2px solid ${T.ink}` : "none", outlineOffset: 1,
                 }} />
               ))}
               <input type="color" value={newCatColor} onChange={(e) => setNewCatColor(e.target.value)}
-                title="צבע חופשי"
-                style={{ width: 18, height: 18, padding: 0, border: "none", borderRadius: 6, cursor: "pointer", background: "transparent" }} />
+                title="צבע חופשי" aria-label="צבע חופשי"
+                style={{ width: 18, height: 18, padding: 0, border: "none", borderRadius: 99, cursor: "pointer", background: "transparent" }} />
             </div>
             <button
               onClick={() => { if (newCatName.trim()) { addCategory(newCatName, newCatColor, newCatParent); setNewCatName(""); setNewCatParent(null); } }}
               disabled={!newCatName.trim()}
               style={{
-                width: "100%", border: "none", borderRadius: 9, padding: "8px 0",
+                width: "100%", border: "none", borderRadius: 10, padding: "8px 0",
                 fontSize: 12, fontWeight: 600, fontFamily: "inherit",
                 background: newCatName.trim() ? T.accentSoft : T.surface,
                 color: newCatName.trim() ? T.accent : T.ink3,
                 cursor: newCatName.trim() ? "pointer" : "default",
-                boxShadow: newCatName.trim() ? `inset 0 0 0 1px ${alpha(T.accent, 33)}` : `inset 0 0 0 1px ${T.line}`,
+                boxShadow: newCatName.trim() ? `inset 0 0 0 1px ${T.accentLine}` : `inset 0 0 0 1px ${T.line}`,
               }}>
               הוספה
             </button>
@@ -764,7 +723,7 @@ export default function TaskJournal() {
           <SectionTitle>מהות</SectionTitle>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
             {(Object.keys(NATURE_LABELS) as TaskNature[]).map((n) => (
-              <button key={n} onClick={() => toggleSet(natureFilter, n, setNatureFilter)}
+              <button key={n} onClick={() => toggleSet(natureFilter, n, setNatureFilter)} aria-pressed={natureFilter.has(n)}
                 style={chip(NATURE_COLORS[n], natureFilter.has(n))}>
                 {NATURE_LABELS[n]}
               </button>
@@ -772,28 +731,22 @@ export default function TaskJournal() {
           </div>
 
           <SectionTitle>סטטוס</SectionTitle>
-          <div style={{ display: "flex", gap: 5, marginBottom: 16 }}>
-            {([["all", "הכל"], ["active", "פעילות"], ["done", "הושלמו"]] as const).map(([v, label]) => (
-              <button key={v} onClick={() => setStatusFilter(v)} style={{
-                flex: 1, borderRadius: 9, padding: "7px 0", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-                border: `1px solid ${statusFilter === v ? `${alpha(T.accent, 40)}` : T.line}`,
-                background: statusFilter === v ? T.accentSoft : "transparent",
-                color: statusFilter === v ? T.accent : T.ink2, fontWeight: statusFilter === v ? 600 : 400,
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, marginBottom: 16, background: T.bg2, padding: 3, borderRadius: 12 }}>
+            {([["all", "הכל"], ["active", "פעילות"], ["progress", "בתהליך"], ["done", "הושלמו"]] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setStatusFilter(v)} aria-pressed={statusFilter === v} style={{
+                borderRadius: 9, padding: "7px 0", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit",
+                border: "none",
+                background: statusFilter === v ? T.surface : "transparent",
+                boxShadow: statusFilter === v ? `0 1px 2px var(--tj-shadow), inset 0 0 0 1px ${T.line}` : "none",
+                color: statusFilter === v ? T.accent : T.ink2, fontWeight: statusFilter === v ? 700 : 500,
               }}>{label}</button>
             ))}
           </div>
 
-          <button onClick={() => setCriticalOnly(!criticalOnly)} style={{
-            display: "flex", alignItems: "center", gap: 8, width: "100%",
-            background: criticalOnly ? T.dangerSoft : "transparent",
-            border: `1px solid ${criticalOnly ? `${alpha(T.danger, 33)}` : T.line}`,
-            borderRadius: 9, padding: "8px 10px", fontSize: 12.5, cursor: "pointer",
-            color: criticalOnly ? T.danger : T.ink2, fontWeight: criticalOnly ? 600 : 400,
-            fontFamily: "inherit", marginBottom: 18,
-          }}>
-            <span style={{ color: T.danger, display: "inline-flex" }}>{Ic.flame(14)}</span>
-            רק משימות קריטיות
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
+            <FilterToggle on={criticalOnly} onClick={() => setCriticalOnly(!criticalOnly)} icon={Ic.flame(14)} label="רק משימות קריטיות" />
+            <FilterToggle on={overdueOnly} onClick={() => setOverdueOnly(!overdueOnly)} icon={Ic.alert(14)} label="רק משימות באיחור" />
+          </div>
 
           {upcomingReminders.length > 0 && (
             <>
@@ -801,11 +754,11 @@ export default function TaskJournal() {
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 {upcomingReminders.map(({ task, r }) => (
                   <button key={r.id} onClick={() => setOpenTaskId(task.id)} style={{
-                    textAlign: "start", background: T.bg2, border: `1px solid ${T.line}`,
-                    borderRadius: 9, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
+                    textAlign: "start", background: T.bg2, border: "none",
+                    borderRadius: 11, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
                     display: "flex", gap: 8, alignItems: "flex-start",
                   }}>
-                    <span style={{ color: T.mint, marginTop: 1 }}>{Ic.clock(13)}</span>
+                    <span style={{ color: T.accent, marginTop: 1 }}>{Ic.clock(13)}</span>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: "block", fontSize: 12, fontWeight: 500, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {r.note || task.title}
@@ -828,144 +781,50 @@ export default function TaskJournal() {
             if (!o) window.scrollTo({ top: 0, behavior: "smooth" });
             return !o;
           })} style={{
-            display: "none", ...card, padding: "10px 14px", fontSize: 13, fontWeight: 600,
+            display: "none", ...card, padding: "11px 14px", fontSize: 13, fontWeight: 600,
             color: T.ink2, cursor: "pointer", textAlign: "start", fontFamily: "inherit",
             alignItems: "center", gap: 8,
           }}>
-            {sidebarOpen ? <>{Ic.x(14)} סגירת סינון</> : <>{Ic.filter(14)} סינון וקטגוריות</>}
+            {sidebarOpen ? <>{Ic.x(14)} סגירת סינון</> : <>{Ic.filter(14)} סינון וקטגוריות{filtersActive && <span style={{ marginInlineStart: "auto", width: 8, height: 8, borderRadius: 99, background: T.accent }} />}</>}
           </button>
 
           {view === "dashboard" && (
             <>
-              {/* hero — ברכה אישית + הוספה מהירה */}
-              <section className="tj-card" style={{ ...card, padding: "16px 18px", background: `linear-gradient(135deg, ${T.surface} 60%, ${T.accentSoft})` }}>
-                {(() => {
-                  const h = today.getHours();
-                  const greet = h < 5 ? "לילה טוב" : h < 12 ? "בוקר טוב" : h < 17 ? "צהריים טובים" : h < 22 ? "ערב טוב" : "לילה טוב";
-                  const emoji = h < 5 ? "🌙" : h < 12 ? "☀️" : h < 17 ? "🌤️" : h < 22 ? "🌇" : "🌙";
-                  const todayCount = allFlat.filter((t) => !isDone(t) && t.dueDate === todayKey).length;
-                  const bits: string[] = [];
-                  if (todayCount > 0) bits.push(`${todayCount} משימות להיום`);
-                  if (overdueCount > 0) bits.push(`${overdueCount} באיחור`);
-                  if (criticalCount > 0) bits.push(`${criticalCount} קריטיות`);
-                  const heb = hebrewDateToday(today);
-                  return (
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{
-                          display: "inline-block", fontSize: 9.5, fontWeight: 600, letterSpacing: "0.18em",
-                          color: T.accent, background: T.accentSoft, borderRadius: 99,
-                          padding: "3px 11px", marginBottom: 8,
-                        }}>
-                          סקירה יומית
-                        </span>
-                        <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.025em", lineHeight: 1.1, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                          <span>{emoji} {greet}, אופיר</span>
-                          {streak >= 2 && (
-                            <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
-                              fontSize: 11.5, fontWeight: 700, color: "#C2410C", background: "#FFEDD5",
-                              borderRadius: 99, padding: "3px 10px",
-                            }}>
-                              🔥 רצף {streak} ימים
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: T.ink2, marginTop: 3 }}>
-                          יום {HE_WEEKDAYS_FULL[today.getDay()]}, <span className="num">{today.getDate()}.{today.getMonth() + 1}</span>
-                          {heb ? <> · {heb}</> : null}
-                          {" · "}
-                          {bits.length ? bits.join(" · ") : "אין משימות להיום — יום נקי ✨"}
-                        </div>
-                      </div>
-                      <button onClick={shareDay} title="שיתוף סיכום היום (וואטסאפ וכו׳)" style={{
-                        display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0,
-                        background: "transparent", border: `1px solid ${T.line}`, color: T.ink2,
-                        borderRadius: 99, padding: "6px 13px", fontSize: 11.5, fontWeight: 600,
-                        cursor: "pointer", fontFamily: "inherit",
-                      }}>
-                        {Ic.share(13)} שיתוף היום
-                      </button>
-                    </div>
-                  );
-                })()}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div style={{ position: "relative", flex: 1 }}>
-                    <span style={{ position: "absolute", insetInlineStart: 11, top: "50%", transform: "translateY(-50%)", color: T.accent, pointerEvents: "none" }}>
-                      {Ic.plus(14)}
-                    </span>
-                    <input
-                      value={quickText}
-                      onChange={(e) => setQuickText(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") quickAdd(); }}
-                      placeholder={'הוספה מהירה — נסה: "להתקשר לדני מחר ב-10:00"'}
-                      style={{ ...inputStyle, width: "100%", paddingInlineStart: 33 }}
-                    />
-                  </div>
-                  <button onClick={quickAdd} disabled={!quickText.trim()} style={{
-                    border: "none", borderRadius: 10, padding: "0 18px", fontSize: 13, fontWeight: 700,
-                    fontFamily: "var(--font-display)", cursor: quickText.trim() ? "pointer" : "default",
-                    background: quickText.trim() ? T.grad : T.surface2,
-                    color: quickText.trim() ? "#fff" : T.ink3,
-                  }}>
-                    הוספה
-                  </button>
-                </div>
-              </section>
+              <Hero
+                personName={personName}
+                today={today}
+                todayKey={todayKey}
+                allFlat={allFlat}
+                nowTick={nowTick}
+                streak={streak}
+                overdueCount={overdueCount}
+                criticalCount={criticalCount}
+                quickText={quickText}
+                setQuickText={setQuickText}
+                quickPreview={quickPreview}
+                onQuickAdd={quickAdd}
+                onShare={shareDay}
+                onOpenTask={setOpenTaskId}
+              />
 
-              {/* KPI strip */}
-              <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 1fr 1fr", gap: 10 }}>
-                {(() => {
-                  const doneAll = allFlat.filter(isDone).length;
-                  const totalAll = allFlat.length;
-                  const pct = totalAll ? Math.round((doneAll / totalAll) * 100) : 0;
-                  return (
-                    <div className="tj-kpi-hero" style={{ ...card, padding: "14px 16px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <span style={{
-                          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-                          background: T.accentSoft, color: T.accent,
-                          display: "inline-flex", alignItems: "center", justifyContent: "center",
-                        }}>{Ic.circle(16)}</span>
-                        <div>
-                          <div className="num tj-kpi-num" style={{ fontSize: 30, fontWeight: 800, lineHeight: 1, color: T.ink }}>{openCount}</div>
-                          <div style={{ fontSize: 11, color: T.ink2, fontWeight: 500 }}>משימות פתוחות</div>
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: T.ink3, marginBottom: 4 }}>
-                          <span>התקדמות כוללת</span>
-                          <span className="num" style={{ color: T.mint, fontWeight: 700 }}>{pct}%</span>
-                        </div>
-                        <div style={{ height: 5, borderRadius: 99, background: T.surface2, overflow: "hidden" }}>
-                          {/* scaleX ולא width: הנפשת רוחב מכריחה פריסה מחדש בכל פריים */}
-                          <div style={{
-                            height: "100%", width: "100%", borderRadius: 99, background: T.mint,
-                            transform: `scaleX(${Math.max(pct, 0) / 100})`, transformOrigin: "right",
-                            transition: "transform .8s cubic-bezier(0.32,0.72,0,1)",
-                          }} />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                <Kpi label="בתהליך" value={inProgressCount} icon={Ic.progress(15)} />
-                <Kpi label="קריטיות" value={criticalCount} icon={Ic.flame(15)} alert={criticalCount > 0} />
-                <Kpi label="באיחור" value={overdueCount} icon={Ic.alert(15)} alert={overdueCount > 0} />
+              {/* מדדים לחיצים — כל מדד הוא גם מסנן */}
+              <div className="tj-kpis tj-card" style={{
+                ...card, padding: 6, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4,
+              }}>
+                <StatCell label="משימות פתוחות" value={openCount} icon={Ic.layers(16)}
+                  active={statusFilter === "active"} onClick={() => setStatusFilter(statusFilter === "active" ? "all" : "active")} />
+                <StatCell label="בתהליך" value={inProgressCount} icon={Ic.progress(16)} tone="amber"
+                  active={statusFilter === "progress"} onClick={() => setStatusFilter(statusFilter === "progress" ? "all" : "progress")} />
+                <StatCell label="קריטיות" value={criticalCount} icon={Ic.flame(16)} tone={criticalCount > 0 ? "danger" : undefined}
+                  active={criticalOnly} onClick={() => setCriticalOnly(!criticalOnly)} />
+                <StatCell label="באיחור" value={overdueCount} icon={Ic.alert(16)} tone={overdueCount > 0 ? "danger" : undefined}
+                  active={overdueOnly} onClick={() => setOverdueOnly(!overdueOnly)} />
               </div>
 
               {/* critical strip */}
               {criticalTasks.length > 0 && (
-                <section className="tj-card" style={{
-                  ...tintCard(T.danger), padding: 16, position: "relative", overflow: "hidden",
-                }}>
-                  <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: `linear-gradient(90deg, ${T.danger}, ${T.danger}66)` }} />
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
-                    <IcChip icon={Ic.flame(16)} color={T.danger} />
-                    <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>משימות קריטיות</h2>
-                    <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", background: T.danger, borderRadius: 99, padding: "2px 10px" }}>
-                      {criticalTasks.length}
-                    </span>
-                  </div>
+                <section className="tj-card" style={{ ...tintCard(T.danger), padding: 16 }}>
+                  <SectionHead icon={Ic.flame(15)} title="משימות קריטיות" count={criticalTasks.length} tone="danger" />
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 8 }}>
                     {criticalTasks.map((t) => (
                       <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
@@ -979,100 +838,94 @@ export default function TaskJournal() {
               {/* tasks (main, right) + calendar (left column) side by side */}
               <div className="tj-dash-cols" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-              <section className="tj-card" style={{ ...card, padding: 16, position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: T.grad }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
-                  <IcChip icon={Ic.layers(16)} color={T.accent} />
-                  <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>המשימות שלי</h2>
-                  <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: T.accent, background: T.accentSoft, borderRadius: 99, padding: "2px 10px" }}>
-                    {activeCount}
-                  </span>
-                </div>
+                  <section className="tj-card" style={{ ...card, padding: 16 }}>
+                    <SectionHead icon={Ic.layers(15)} title="המשימות שלי" count={activeCount}
+                      extra={filtersActive ? (
+                        <button onClick={clearFilters} style={{ marginInlineStart: "auto", background: "none", border: "none", color: T.accent, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          {Ic.x(11)} ניקוי סינון
+                        </button>
+                      ) : undefined} />
 
-                {activeCount === 0 ? (
-                  doneTasks.length > 0 ? (
-                    <div style={{ textAlign: "center", padding: "34px 20px", color: T.mint, fontSize: 14, fontWeight: 600 }}>
-                      🎉 כל המשימות הושלמו — כל הכבוד!
+                    {activeCount === 0 ? (
+                      doneTasks.length > 0 ? (
+                        <div style={{ textAlign: "center", padding: "34px 20px", color: T.mint, fontSize: 14, fontWeight: 600, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                          {Ic.sparkle(26)}
+                          כל המשימות הושלמו — כל הכבוד!
+                        </div>
+                      ) : (
+                        <Empty filtersActive={filtersActive} onCreate={createTask} />
+                      )
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {regularTasks.map((t) => (
+                          <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
+                            todayKey={todayKey}
+                            onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
+                        ))}
+                        {regularTasks.length === 0 && (
+                          <div style={{ fontSize: 12.5, color: T.ink3, padding: "8px 2px" }}>כל המשימות הפתוחות כאן קריטיות — הן מופיעות למעלה.</div>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                </div>
+                <div className="tj-dash-cal" style={{ width: 452, flexShrink: 0, position: "sticky", top: 70 }}>
+                  <section className="tj-card" style={{ ...card, padding: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                      <HeadIcon icon={Ic.calendar(15)} />
+                      <h2 style={sectionH2}>לוח שנה</h2>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginInlineStart: "auto" }}>
+                        <NavBtn label="החודש הקודם" onClick={() => { const m = calMonth - 1; if (m < 0) { setCalMonth(11); setCalYear(calYear - 1); } else setCalMonth(m); }}>{Ic.chevR(14)}</NavBtn>
+                        <div className="num" style={{ minWidth: 112, textAlign: "center", fontWeight: 600, fontSize: 13.5 }}>
+                          {HE_MONTHS[calMonth]} {calYear}
+                        </div>
+                        <NavBtn label="החודש הבא" onClick={() => { const m = calMonth + 1; if (m > 11) { setCalMonth(0); setCalYear(calYear + 1); } else setCalMonth(m); }}>{Ic.chevL(14)}</NavBtn>
+                        <button onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth()); }} style={{
+                          marginInlineStart: 6, background: T.accentSoft, color: T.accent, border: "none",
+                          borderRadius: 99, padding: "5px 13px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                        }}>היום</button>
+                      </div>
                     </div>
-                  ) : (
-                    <Empty filtersActive={filtersActive} onCreate={createTask} />
-                  )
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                    {regularTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
-                        todayKey={todayKey}
-                        onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
-                    ))}
-                  </div>
-                )}
-              </section>
-                </div>
-                <div className="tj-dash-cal" style={{ width: 452, flexShrink: 0, position: "sticky", top: 14 }}>
-              <section className="tj-card" style={{ ...card, padding: 16, position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", insetInline: 0, top: 0, height: 3, background: T.grad }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-                  <IcChip icon={Ic.calendar(16)} color={T.accent} />
-                  <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>לוח שנה</h2>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginInlineStart: "auto" }}>
-                    <NavBtn onClick={() => { const m = calMonth - 1; if (m < 0) { setCalMonth(11); setCalYear(calYear - 1); } else setCalMonth(m); }}>{Ic.chevR(14)}</NavBtn>
-                    <div className="num" style={{ minWidth: 118, textAlign: "center", fontWeight: 600, fontSize: 13.5 }}>
-                      {HE_MONTHS[calMonth]} {calYear}
-                    </div>
-                    <NavBtn onClick={() => { const m = calMonth + 1; if (m > 11) { setCalMonth(0); setCalYear(calYear + 1); } else setCalMonth(m); }}>{Ic.chevL(14)}</NavBtn>
-                    <button onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth()); }} style={{
-                      marginInlineStart: 6, background: T.accentSoft, color: T.accent, border: "none",
-                      borderRadius: 99, padding: "5px 13px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                    }}>היום</button>
-                  </div>
-                </div>
 
-                <CalendarGrid
-                  year={calYear} month={calMonth} todayKey={todayKey}
-                  items={calendarItems} catById={catById}
-                  selectedDate={selectedDate}
-                  onSelectDate={(k) => setSelectedDate(selectedDate === k ? null : k)}
-                  onOpenTask={(id) => setOpenTaskId(id)}
-                />
+                    <CalendarGrid
+                      year={calYear} month={calMonth} todayKey={todayKey}
+                      items={calendarItems} catById={catById}
+                      selectedDate={selectedDate}
+                      onSelectDate={(k) => setSelectedDate(selectedDate === k ? null : k)}
+                      onOpenTask={(id) => setOpenTaskId(id)}
+                    />
 
-                {selectedDate && (
-                  <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
-                    <span style={{ color: T.mint, background: T.mintSoft, borderRadius: 99, padding: "3px 12px" }}>
-                      מסונן לתאריך {formatDateHe(selectedDate)}
-                    </span>
-                    <button onClick={() => setSelectedDate(null)} style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", fontSize: 11.5, textDecoration: "underline", fontFamily: "inherit" }}>
-                      הצגת הכל
-                    </button>
-                  </div>
-                )}
-              </section>
+                    {selectedDate && (
+                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+                        <span style={{ color: T.mint, background: T.mintSoft, borderRadius: 99, padding: "3px 12px", fontWeight: 600 }}>
+                          מסונן לתאריך {formatDateHe(selectedDate)}
+                        </span>
+                        <button onClick={() => setSelectedDate(null)} style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", fontSize: 11.5, textDecoration: "underline", fontFamily: "inherit" }}>
+                          הצגת הכל
+                        </button>
+                      </div>
+                    )}
+                  </section>
 
-              {/* המשימות שהושלמו — רשימה מרוכזת מתחת ללוח השנה (בקשה של אופיר) */}
-              <section className="tj-card" style={{ ...card, padding: 16, marginTop: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: doneTasks.length > 0 ? 12 : 0 }}>
-                  <span style={{ color: T.mint }}>{Ic.checkCircle(16)}</span>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-display)" }}>הושלמו</h2>
-                  <span className="num" style={{ fontSize: 11.5, color: T.mint, background: T.mintSoft, borderRadius: 99, padding: "2px 9px" }}>
-                    {doneTasks.length}
-                  </span>
-                </div>
-                {doneTasks.length === 0 ? (
-                  <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
-                    משימות שתסמנו כ&quot;הושלמו&quot; יעברו לכאן.
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 380, overflowY: "auto" }}>
-                    {doneTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
-                        todayKey={todayKey} compact
-                        onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
-                    ))}
-                  </div>
-                )}
-              </section>
+                  {/* המשימות שהושלמו — רשימה מרוכזת מתחת ללוח השנה (בקשה של אופיר) */}
+                  <section className="tj-card" style={{ ...card, padding: 16, marginTop: 14 }}>
+                    <SectionHead icon={Ic.checkCircle(15)} title="הושלמו" count={doneTasks.length} tone="mint" tight={doneTasks.length === 0} />
+                    {doneTasks.length === 0 ? (
+                      <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
+                        משימות שתסמנו כ&quot;הושלמו&quot; יעברו לכאן.
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 380, overflowY: "auto" }}>
+                        {doneTasks.map((t) => (
+                          <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
+                            todayKey={todayKey} compact
+                            onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
               </div>
-
             </>
           )}
 
@@ -1095,6 +948,7 @@ export default function TaskJournal() {
           )}
         </main>
       </div>
+      )}
 
       {openRoot && (
         <TaskModal
@@ -1117,15 +971,22 @@ export default function TaskJournal() {
         />
       )}
 
+      {notifyOpen && (
+        <NotifyCenter
+          journalId={journalId}
+          personName={personName}
+          pushState={pushState}
+          setPushState={setPushState}
+          onClose={() => setNotifyOpen(false)}
+        />
+      )}
+
       <style>{`
-        ::selection { background: rgba(61,126,255,0.4); }
         @media (max-width: 1290px) { .tj-toolbar { margin-inline: 12px !important; } }
         .tj-newbtn:hover .tj-newbtn-orb { transform: rotate(90deg) scale(1.08); }
-        .tj-newbtn-orb { transition: transform .45s cubic-bezier(0.32,0.72,0,1); }
+        .tj-newbtn-orb { transition: transform .45s var(--ease-soft); }
         .tj-catdel { opacity: 0; transition: opacity .15s; }
-        .tj-catrow:hover .tj-catdel { opacity: 0.7; }
-        .tj-card { transition: box-shadow .18s, transform .18s, border-color .18s; }
-        input::placeholder, textarea::placeholder { color: #5E7089; }
+        .tj-catrow:hover .tj-catdel, .tj-catrow:focus-within .tj-catdel { opacity: 0.75; }
         @media (max-width: 520px) { .tj-synctext { display: none; } }
         @media (max-width: 1180px) {
           .tj-dash-cols { flex-direction: column !important; }
@@ -1136,20 +997,24 @@ export default function TaskJournal() {
           .tj-sidebar-toggle { display: flex !important; }
           .tj-layout { flex-direction: column; }
           .tj-layout > aside { width: 100% !important; position: static !important; }
-          .tj-catdel { opacity: 0.7; }
+          .tj-catdel { opacity: 0.75; }
           .tj-apply-mobile { display: flex !important; }
           .tj-search-live { display: flex !important; }
         }
         input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
+        @media (max-width: 760px) {
+          .tj-toolbar { flex-direction: column; align-items: stretch !important; }
+          .tj-actions { margin-inline-start: 0 !important; }
+          .tj-newbtn { flex: 1; }
+          .tj-notify-label { display: none; }
+        }
         @media (max-width: 640px) {
           /* פונט מתחת ל-16px גורם לזום אוטומטי של iOS בפוקוס על שדה */
           input, textarea, select { font-size: 16px !important; }
-          .tj-toolbar { padding: 7px 8px !important; margin: 8px 8px 0 !important; top: 6px !important; }
+          .tj-toolbar { padding: 6px !important; margin: 8px 8px 0 !important; top: 6px !important; border-radius: 20px !important; }
           .tj-layout { padding: 10px 10px 40px !important; gap: 10px !important; }
-          .tj-card { padding: 12px !important; }
-          .tj-kpis { grid-template-columns: repeat(2,1fr) !important; }
-          .tj-kpi-hero { grid-column: 1 / -1; }
-          .tj-newbtn { flex: 1; justify-content: center; }
+          .tj-card { padding: 13px !important; }
+          .tj-kpis { grid-template-columns: repeat(2,1fr) !important; padding: 5px !important; }
           .tj-calday { min-height: 52px !important; padding: 3px 3px !important; }
           .tj-calday button { font-size: 8.5px !important; padding: 1px 3px !important; }
         }
@@ -1158,59 +1023,467 @@ export default function TaskJournal() {
   );
 }
 
+const noopSubscribe = () => () => {};
+
 function filteredCountByCat(tasks: Task[], catId: string): number {
   return flattenTasks(tasks).filter((t) => t.categoryId === catId && !isDone(t)).length;
 }
 
 // ============ pieces ============
 
-function Header({ sync }: { sync: { icon: React.ReactNode; label: string; color: string } }) {
+const sectionH2: React.CSSProperties = {
+  margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em",
+};
+
+function HeadIcon({ icon, tone }: { icon: React.ReactNode; tone?: "danger" | "mint" }) {
+  const c = tone === "danger" ? T.danger : tone === "mint" ? T.mint : T.accent;
+  const bg = tone === "danger" ? T.dangerSoft : tone === "mint" ? T.mintSoft : T.accentSoft;
   return (
-    <header style={{
-      position: "relative",
-      background: "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(247,250,253,0.82))",
-      backdropFilter: "saturate(1.4) blur(8px)",
+    <span style={{
+      width: 30, height: 30, borderRadius: 10, flexShrink: 0, background: bg, color: c,
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+    }}>{icon}</span>
+  );
+}
+
+function SectionHead({ icon, title, count, tone, extra, tight }: {
+  icon: React.ReactNode; title: string; count?: number; tone?: "danger" | "mint"; extra?: React.ReactNode; tight?: boolean;
+}) {
+  const c = tone === "danger" ? T.danger : tone === "mint" ? T.mint : T.accent;
+  const bg = tone === "danger" ? T.dangerSoft : tone === "mint" ? T.mintSoft : T.accentSoft;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: tight ? 0 : 13 }}>
+      <HeadIcon icon={icon} tone={tone} />
+      <h2 style={sectionH2}>{title}</h2>
+      {count !== undefined && (
+        <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: c, background: bg, borderRadius: 99, padding: "2px 10px" }}>
+          {count}
+        </span>
+      )}
+      {extra}
+    </div>
+  );
+}
+
+// ---- הכותרת: זהות ההסתדרות + של מי היומן ----
+function Header({ sync, onSyncClick, personName, personColor, isManager, teamCount }: {
+  sync: { icon: React.ReactNode; label: string; color: string };
+  onSyncClick: () => void;
+  personName: string;
+  personColor: PersonColor;
+  isManager: boolean;
+  teamCount: number;
+}) {
+  // מכשיר של המנהל שפתח יומן של איש צוות — קיצור חזרה לדשבורד
+  const managerDevice = useSyncExternalStore(noopSubscribe, isManagerDevice, () => false) && !isManager;
+  return (
+    <header className="tj-header" style={{
+      background: "var(--tj-glass)",
+      backdropFilter: "saturate(1.4) blur(12px)", WebkitBackdropFilter: "saturate(1.4) blur(12px)",
       borderBottom: `1px solid ${T.line}`,
-      padding: "11px 18px", display: "flex", alignItems: "center", gap: 12,
-      boxShadow: "0 1px 0 rgba(255,255,255,0.7) inset, 0 6px 18px -14px rgba(23,43,77,0.5)",
+      padding: "10px 18px", display: "flex", alignItems: "center", gap: 12,
     }}>
-      <div style={{ position: "absolute", insetInline: 0, bottom: 0, height: 3, background: T.grad, opacity: 0.9 }} />
       <div style={{
-        background: "#fff", borderRadius: 12, padding: "5px 8px", display: "flex", alignItems: "center",
+        background: "#fff", borderRadius: 13, padding: "5px 8px", display: "flex", alignItems: "center",
         border: `1px solid ${T.line}`, boxShadow: T.shadowSm,
       }}>
         <Image src="/logo-histadrut.svg" alt="ההסתדרות" width={40} height={34}
-          style={{ height: 32, width: "auto" }} />
+          style={{ height: 30, width: "auto" }} />
       </div>
-      <div style={{ lineHeight: 1.15 }}>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: "#F2554A", letterSpacing: "-0.02em" }}>
+      <div className="tj-brandtext" style={{ lineHeight: 1.15 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16.5, color: "#E8483E", letterSpacing: "-0.02em" }}>
           ההסתדרות
         </div>
         <div style={{ fontSize: 10.5, color: T.ink2, fontWeight: 500 }}>
           הבית של העובדים בישראל
         </div>
       </div>
-      <div style={{ width: 1, height: 30, background: `linear-gradient(${T.line}, transparent)`, marginInline: 6 }} />
+      <div className="tj-brandtext" style={{ width: 1, height: 30, background: T.line, marginInline: 4 }} />
+      <Avatar name={personName} color={personColor} size={36} />
       <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-        <div style={{
-          fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15.5,
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          background: T.grad, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+        <h1 style={{
+          margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: T.ink,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "-0.015em",
         }}>
-          יומן המשימות של אופיר
-        </div>
-        <div className="num" style={{ fontSize: 10, color: T.ink3, letterSpacing: "0.14em" }}>
-          TASK JOURNAL · V4
+          היומן של {personName}
+        </h1>
+        <div style={{ fontSize: 11, color: T.ink3, display: "flex", alignItems: "center", gap: 5 }}>
+          {isManager ? (
+            <>
+              <span style={{ color: T.accent, display: "inline-flex" }}>{Ic.crown(11)}</span>
+              {teamCount > 0 ? `מנהל · ${teamCount} ${teamCount === 1 ? "איש צוות" : "אנשי צוות"}` : "יומן המשימות"}
+            </>
+          ) : (
+            <>הצוות של {MANAGER_NAME}</>
+          )}
+          <span className="num" style={{ opacity: 0.6, letterSpacing: "0.12em", fontSize: 9.5 }}>· V5</span>
         </div>
       </div>
-      <span style={{
-        marginInlineStart: "auto", color: sync.color, display: "inline-flex", alignItems: "center", gap: 6,
-        background: T.surface, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 11px",
-        fontSize: 11, fontWeight: 600, boxShadow: T.shadowSm,
-      }} title={sync.label}>
-        {sync.icon}<span className="tj-synctext">{sync.label}</span>
-      </span>
+      <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+        {managerDevice && (
+          // ניווט מלא ולא <Link>: מעבר בין יומנים טוען מחדש את מצב הסנכרון ואת נעילת המנהל
+          // eslint-disable-next-line @next/next/no-html-link-for-pages
+          <a href="/?view=team" style={{
+            display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none",
+            color: T.ink2, fontSize: 11.5, fontWeight: 600, border: `1px solid ${T.line}`,
+            borderRadius: 99, padding: "5px 11px", background: T.surface,
+          }}>
+            {Ic.users(13)} <span className="tj-synctext">לדשבורד הצוות</span>
+          </a>
+        )}
+        <button onClick={onSyncClick} title="לחיצה מציגה אבחון סנכרון" style={{
+          color: sync.color, display: "inline-flex", alignItems: "center", gap: 6,
+          background: T.surface, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 11px",
+          fontSize: 11, fontWeight: 600, boxShadow: T.shadowSm, cursor: "pointer", fontFamily: "inherit",
+        }}>
+          {sync.icon}<span className="tj-synctext">{sync.label}</span>
+        </button>
+      </div>
+      <style>{`@media (max-width: 640px) { .tj-brandtext { display: none; } .tj-header { padding: 9px 12px !important; } }`}</style>
     </header>
+  );
+}
+
+// ---- טאבים עם גלולה שגולשת ----
+function ViewTabs({ views, view, onChange }: {
+  views: { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode }[];
+  view: ViewKey;
+  onChange: (v: ViewKey) => void;
+}) {
+  const navRef = useRef<HTMLElement>(null);
+  const [pill, setPill] = useState<{ x: number; w: number; total: number } | null>(null);
+  useLayoutEffect(() => {
+    function measure() {
+      const nav = navRef.current;
+      const btn = nav?.querySelector<HTMLElement>(`[data-view="${view}"]`);
+      if (!nav || !btn) return;
+      const nr = nav.getBoundingClientRect();
+      const br = btn.getBoundingClientRect();
+      // RTL: מודדים מהקצה הימני של התוכן הנגלל (scrollLeft שלילי כשגוללים שמאלה)
+      setPill({ x: nr.right - br.right - nav.scrollLeft, w: br.width, total: nav.scrollWidth });
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    document.fonts?.ready.then(measure).catch(() => { /* ignore */ });
+    return () => window.removeEventListener("resize", measure);
+  }, [view, views]);
+
+  return (
+    <nav ref={navRef} className="no-scrollbar" aria-label="תצוגות" style={{
+      position: "relative", display: "flex", gap: 2, background: T.bg2,
+      borderRadius: 14, padding: 3, overflowX: "auto", maxWidth: "100%",
+    }}>
+      {pill && (
+        <span className="tj-tabpill" style={{
+          width: pill.total,
+          clipPath: `inset(0 ${pill.x}px 0 ${Math.max(0, pill.total - pill.x - pill.w)}px round 10px)`,
+        }} />
+      )}
+      {views.map((v) => {
+        const active = view === v.key;
+        return (
+          <button key={v.key} data-view={v.key} aria-current={active ? "page" : undefined}
+            onClick={(e) => { onChange(v.key); e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" }); }}
+            style={{
+            position: "relative", display: "inline-flex", alignItems: "center", gap: 7,
+            background: "transparent", color: active ? T.ink : T.ink2,
+            border: "none", borderRadius: 10, padding: "8px 13px",
+            fontSize: 13, fontWeight: active ? 700 : 500, cursor: "pointer",
+            whiteSpace: "nowrap", fontFamily: "inherit",
+          }}>
+            <span style={{ color: active ? T.accent : T.ink3, display: "inline-flex" }}>{v.icon(15)}</span>
+            {v.label}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+// ---- ה-hero: ברכה, ציר היום, הוספה מהירה עם הבנה חיה, וטבעת היום ----
+function Hero({
+  personName, today, todayKey, allFlat, nowTick, streak, overdueCount, criticalCount,
+  quickText, setQuickText, quickPreview, onQuickAdd, onShare, onOpenTask,
+}: {
+  personName: string;
+  today: Date;
+  todayKey: string;
+  allFlat: Task[];
+  nowTick: number;
+  streak: number;
+  overdueCount: number;
+  criticalCount: number;
+  quickText: string;
+  setQuickText: (s: string) => void;
+  quickPreview: ReturnType<typeof parseQuickAdd> | null;
+  onQuickAdd: () => void;
+  onShare: () => void;
+  onOpenTask: (id: string) => void;
+}) {
+  const h = today.getHours();
+  const greet = h < 5 ? "לילה טוב" : h < 12 ? "בוקר טוב" : h < 17 ? "צהריים טובים" : h < 22 ? "ערב טוב" : "לילה טוב";
+  const dayIcon = h < 5 || h >= 21 ? Ic.moon(20) : h < 11 ? Ic.sunrise(20) : h < 17 ? Ic.sun(20) : Ic.sunset(20);
+  const todays = allFlat.filter((t) => t.dueDate === todayKey);
+  const todayDone = todays.filter(isDone).length;
+  const todayOpen = todays.length - todayDone;
+  const doneAll = allFlat.filter(isDone).length;
+  const pctAll = allFlat.length ? Math.round((doneAll / allFlat.length) * 100) : 0;
+  const bits: string[] = [];
+  if (todayOpen > 0) bits.push(`${todayOpen} משימות להיום`);
+  if (overdueCount > 0) bits.push(`${overdueCount} באיחור`);
+  if (criticalCount > 0) bits.push(`${criticalCount} קריטיות`);
+  const heb = hebrewDateToday(today);
+
+  const previewChips: string[] = [];
+  if (quickPreview) {
+    if (quickPreview.dueDate && quickPreview.dueDate !== todayKey) previewChips.push(formatDateHe(quickPreview.dueDate));
+    else previewChips.push("היום");
+    if (quickPreview.reminder) {
+      previewChips.push(`תזכורת ${new Date(quickPreview.reminder).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`);
+    }
+    if (quickPreview.critical) previewChips.push("קריטית");
+  }
+
+  return (
+    <section className="tj-card tj-hero" style={{
+      ...card, padding: "18px 20px", overflow: "hidden",
+      background: `radial-gradient(120% 140% at 100% 0%, ${T.accentSoft}, transparent 55%), ${T.surface}`,
+    }}>
+      <div className="tj-hero-grid" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 18, alignItems: "start" }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="tj-hero-head" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{
+              width: 42, height: 42, borderRadius: 14, flexShrink: 0, color: T.accent, background: T.accentSoft,
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+            }}>{dayIcon}</span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <h2 style={{ margin: 0, fontSize: 27, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
+                  {greet}, {firstName(personName)}
+                </h2>
+                {streak >= 2 && (
+                  <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    fontSize: 11.5, fontWeight: 700, color: T.amber, background: T.amberSoft,
+                    borderRadius: 99, padding: "3px 10px 3px 9px",
+                  }}>
+                    {Ic.flame(12)} רצף {streak} ימים
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 4 }}>
+                יום {HE_WEEKDAYS_FULL[today.getDay()]}, <span className="num">{today.getDate()}.{today.getMonth() + 1}</span>
+                {heb ? <> · {heb}</> : null}
+                {" · "}
+                {bits.length ? bits.join(" · ") : "אין משימות להיום — יום נקי"}
+              </div>
+            </div>
+          </div>
+
+          <DayTimeline allFlat={allFlat} todayKey={todayKey} nowTick={nowTick} onOpenTask={onOpenTask} />
+
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <span style={{ position: "absolute", insetInlineStart: 12, top: "50%", transform: "translateY(-50%)", color: T.accent, pointerEvents: "none" }}>
+                {Ic.sparkle(15)}
+              </span>
+              <input
+                value={quickText}
+                onChange={(e) => setQuickText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") onQuickAdd(); }}
+                aria-label="הוספה מהירה"
+                placeholder={'נסו: "להתקשר לדני מחר ב-10:00"'}
+                style={{ ...inputStyle, width: "100%", paddingInlineStart: 36, height: 44, borderRadius: 14, background: "var(--tj-input)" }}
+              />
+            </div>
+            <button onClick={onQuickAdd} disabled={!quickText.trim()} style={{
+              ...primaryBtn, borderRadius: 14, padding: "0 20px", height: 44,
+              ...(quickText.trim() ? {} : { background: T.surface2, color: T.ink3, boxShadow: "none" }),
+            }}>
+              הוספה
+            </button>
+          </div>
+          <div aria-live="polite" style={{ minHeight: 26, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+            {quickPreview?.title ? (
+              <>
+                <span style={{ fontSize: 11, color: T.ink3 }}>הבנתי:</span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {quickPreview.title}
+                </span>
+                {previewChips.map((c) => (
+                  <span key={c} className="tj-pop" style={{
+                    fontSize: 11, fontWeight: 600, borderRadius: 99, padding: "2px 9px",
+                    color: c === "קריטית" ? T.danger : T.accent, background: c === "קריטית" ? T.dangerSoft : T.accentSoft,
+                  }}>{c}</span>
+                ))}
+              </>
+            ) : (
+              <button onClick={onShare} style={{
+                display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0,
+                color: T.ink3, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+              }}>
+                {Ic.share(12)} שיתוף סיכום היום בוואטסאפ
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* טבעת היום: כמה מהמשימות של היום כבר נסגרו */}
+        <div className="tj-hero-ring" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingTop: 2 }}>
+          <ProgressRing
+            value={todays.length ? todayDone / todays.length : pctAll / 100}
+            size={108} stroke={9} color={T.mint}
+            label={todays.length ? `${todayDone} מתוך ${todays.length} משימות היום הושלמו` : `התקדמות כוללת ${pctAll}%`}
+          >
+            {todays.length ? (
+              <>
+                <span className="num" style={{ fontSize: 24, fontWeight: 800, lineHeight: 1, color: T.ink }}>
+                  {todayDone}<span style={{ color: T.ink3, fontSize: 15 }}>/{todays.length}</span>
+                </span>
+                <span style={{ fontSize: 10.5, color: T.ink3, marginTop: 3 }}>היום</span>
+              </>
+            ) : (
+              <>
+                <span className="num" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: T.ink }}>{pctAll}%</span>
+                <span style={{ fontSize: 10.5, color: T.ink3, marginTop: 3 }}>הושלם</span>
+              </>
+            )}
+          </ProgressRing>
+          <span className="num" style={{ fontSize: 10.5, color: T.ink3 }}>
+            התקדמות כוללת <b style={{ color: T.mint }}>{pctAll}%</b>
+          </span>
+        </div>
+      </div>
+      <style>{`
+        @media (max-width: 640px) {
+          .tj-hero-grid { grid-template-columns: 1fr !important; }
+          .tj-hero-ring { position: absolute; top: 12px; inset-inline-end: 12px; transform: scale(0.6); transform-origin: top left; }
+          .tj-hero-ring > span { display: none; }
+          .tj-hero-head { padding-inline-end: 66px; align-items: flex-start !important; }
+          .tj-hero h2 { font-size: 22px !important; }
+        }
+      `}</style>
+    </section>
+  );
+}
+
+// ציר היום: התזכורות של היום על פני השעות, עם סמן "עכשיו" חי
+function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
+  allFlat: Task[]; todayKey: string; nowTick: number; onOpenTask: (id: string) => void;
+}) {
+  const START = 6, END = 24;
+  const items = allFlat.flatMap((t) =>
+    t.reminders
+      .filter((r) => toDateKey(new Date(r.datetime)) === todayKey)
+      .map((r) => ({ t, r, d: new Date(r.datetime) }))
+  ).sort((a, b) => a.d.getTime() - b.d.getTime());
+  const pos = (d: Date) => {
+    const hours = d.getHours() + d.getMinutes() / 60;
+    return Math.max(0, Math.min(1, (hours - START) / (END - START)));
+  };
+  const now = nowTick ? new Date(nowTick) : null;
+  const nowPos = now ? pos(now) : null;
+  const ticks = [6, 9, 12, 15, 18, 21, 24];
+  return (
+    <div style={{ marginTop: 16 }} aria-label="ציר היום">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.ink2 }}>היום שלך</span>
+        <span style={{ fontSize: 10.5, color: T.ink3 }}>
+          {items.length ? `${items.length} ${items.length === 1 ? "תזכורת" : "תזכורות"} היום` : "אין תזכורות מתוזמנות להיום"}
+        </span>
+      </div>
+      <div style={{ position: "relative", height: 30 }}>
+        <div style={{ position: "absolute", insetInline: 0, top: 13, height: 4, borderRadius: 99, background: T.surface2 }} />
+        {nowPos !== null && (
+          <div style={{
+            position: "absolute", insetInlineStart: 0, top: 13, height: 4, borderRadius: 99,
+            width: `${nowPos * 100}%`, background: `linear-gradient(90deg, ${alpha(T.accent, 15)}, ${alpha(T.accent, 55)})`,
+            transform: "scaleX(-1)", transformOrigin: "center",
+          }} />
+        )}
+        {ticks.map((h) => (
+          <span key={h} style={{
+            position: "absolute", top: 11, width: 1, height: 8, background: T.lineStrong,
+            insetInlineStart: `${((h - START) / (END - START)) * 100}%`,
+          }} />
+        ))}
+        {items.map(({ t, r, d }) => {
+          const past = now ? d.getTime() < now.getTime() : false;
+          const done = isDone(t);
+          const c = t.critical ? T.danger : done ? T.mint : T.accent;
+          return (
+            <button key={r.id} onClick={() => onOpenTask(t.id)}
+              title={`${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })} · ${r.note || t.title}`}
+              aria-label={`${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })} — ${r.note || t.title}`}
+              style={{
+                position: "absolute", top: 3, insetInlineStart: `calc(${pos(d) * 100}% - 12px)`,
+                width: 24, height: 24, borderRadius: 99, border: "none", background: "transparent",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+              }}>
+              <span style={{
+                width: 12, height: 12, borderRadius: 99, background: past || done ? T.surface : c,
+                boxShadow: `0 0 0 2.5px ${c}, 0 0 0 5px ${T.surface}`,
+              }} />
+            </button>
+          );
+        })}
+        {nowPos !== null && now && now.getHours() >= START && (
+          <span className="tj-live" title="עכשיו" style={{
+            position: "absolute", top: 10, insetInlineStart: `calc(${nowPos * 100}% - 5px)`,
+            width: 10, height: 10, borderRadius: 99, background: T.accent, color: T.accent,
+            boxShadow: `0 0 0 3px ${T.surface}`,
+          }} />
+        )}
+      </div>
+      <div style={{ position: "relative", height: 14 }}>
+        {ticks.map((h) => (
+          <span key={h} className="num" style={{
+            position: "absolute", fontSize: 9.5, color: T.ink3,
+            insetInlineStart: `${((h - START) / (END - START)) * 100}%`, transform: "translateX(50%)",
+          }}>{h === 24 ? "00" : String(h).padStart(2, "0")}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatCell({ label, value, icon, tone, active, onClick }: {
+  label: string; value: number; icon: React.ReactNode; tone?: "danger" | "amber"; active: boolean; onClick: () => void;
+}) {
+  const c = tone === "danger" ? T.danger : tone === "amber" ? T.amber : T.accent;
+  const bg = tone === "danger" ? T.dangerSoft : tone === "amber" ? T.amberSoft : T.accentSoft;
+  return (
+    <button onClick={onClick} aria-pressed={active} title={active ? "לחיצה מבטלת את הסינון" : `סינון: ${label}`} style={{
+      display: "flex", alignItems: "center", gap: 12, textAlign: "start", padding: "12px 14px",
+      borderRadius: 15, border: "none", cursor: "pointer", fontFamily: "inherit",
+      background: active ? bg : "transparent",
+      boxShadow: active ? `inset 0 0 0 1px ${alpha(c, 35)}` : "none",
+    }}>
+      <span style={{
+        width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: bg, color: c,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}>{icon}</span>
+      <span style={{ minWidth: 0 }}>
+        <span className="num tj-kpi-num" style={{ display: "block", fontSize: 24, fontWeight: 800, lineHeight: 1.05, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
+        <span style={{ display: "block", fontSize: 11.5, color: T.ink2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+      </span>
+    </button>
+  );
+}
+
+function FilterToggle({ on, onClick, icon, label }: { on: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button onClick={onClick} aria-pressed={on} style={{
+      display: "flex", alignItems: "center", gap: 8, width: "100%",
+      background: on ? T.dangerSoft : "transparent",
+      border: `1px solid ${on ? alpha(T.danger, 30) : T.line}`,
+      borderRadius: 11, padding: "8px 10px", fontSize: 12.5, cursor: "pointer",
+      color: on ? T.danger : T.ink2, fontWeight: on ? 600 : 500,
+      fontFamily: "inherit",
+    }}>
+      <span style={{ color: T.danger, display: "inline-flex" }}>{icon}</span>
+      {label}
+    </button>
   );
 }
 
@@ -1218,69 +1491,39 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 7,
-      fontSize: 10.5, fontWeight: 700, color: T.ink3, marginBottom: 9,
-      letterSpacing: "0.06em", textTransform: "uppercase",
+      fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 9,
     }}>
-      <span style={{ width: 3, height: 12, borderRadius: 99, background: T.grad }} />
       {children}
     </div>
   );
 }
 
-// אייקון בתוך צ'יפ צבעוני מדורג — נותן משקל ויזואלי לכותרות מקטעים
-function IcChip({ icon, color, size = 30 }: { icon: React.ReactNode; color: string; size?: number }) {
+function NavBtn({ children, onClick, label }: { children: React.ReactNode; onClick: () => void; label: string }) {
   return (
-    <span style={{
-      width: size, height: size, borderRadius: 9, flexShrink: 0,
-      background: `linear-gradient(135deg, ${color}, ${color}C4)`, color: "#fff",
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-      boxShadow: `0 5px 14px -6px ${color}AA`,
-    }}>{icon}</span>
-  );
-}
-
-function NavBtn({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  return (
-    <button onClick={onClick} style={{
-      width: 28, height: 28, borderRadius: 8, border: `1px solid ${T.line}`,
+    <button onClick={onClick} aria-label={label} style={{
+      width: 30, height: 30, borderRadius: 99, border: `1px solid ${T.line}`,
       background: "transparent", cursor: "pointer", color: T.ink2,
       display: "inline-flex", alignItems: "center", justifyContent: "center",
     }}>{children}</button>
   );
 }
 
-// KPI אחיד: לבן + כחול המותג; אדום מופיע רק כשיש באמת בעיה (alert)
-function Kpi({ label, value, icon, alert }: { label: string; value: number; icon: React.ReactNode; alert?: boolean }) {
-  const c = alert ? T.danger : T.accent;
-  return (
-    <div style={{ ...card, padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
-      <span style={{
-        width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-        background: alert ? T.dangerSoft : T.accentSoft, color: c,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-      }}>{icon}</span>
-      <div style={{ minWidth: 0 }}>
-        <div className="num tj-kpi-num" style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.05, color: alert ? T.danger : T.ink }}>{value}</div>
-        <div style={{ fontSize: 11, color: T.ink2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
-      </div>
-    </div>
-  );
-}
-
 function Empty({ filtersActive, onCreate }: { filtersActive: boolean; onCreate: () => void }) {
   return (
-    <div style={{ textAlign: "center", padding: "44px 20px", color: T.ink3 }}>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12, color: T.ink3 }}>{Ic.layers(34)}</div>
-      <div style={{ fontSize: 14, fontWeight: 500, color: T.ink2 }}>
+    <div style={{ textAlign: "center", padding: "40px 20px", color: T.ink3 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12, color: T.accent }}>
+        <span style={{ width: 60, height: 60, borderRadius: 20, background: T.accentSoft, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          {Ic.layers(28)}
+        </span>
+      </div>
+      <div style={{ fontSize: 14.5, fontWeight: 600, color: T.ink }}>
         {filtersActive ? "אין משימות שתואמות את הסינון" : "היומן ריק — זה הזמן להתחיל"}
       </div>
+      <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
+        {filtersActive ? "נסו להסיר חלק מהמסננים בסרגל הצד." : "כתבו משימה בשורת ההוספה המהירה למעלה, או פתחו משימה מלאה."}
+      </div>
       {!filtersActive && (
-        <button onClick={onCreate} style={{
-          marginTop: 14, display: "inline-flex", alignItems: "center", gap: 7,
-          background: T.grad, color: "#fff", border: "none",
-          borderRadius: 10, padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-          fontFamily: "var(--font-display)",
-        }}>{Ic.plus(14)} משימה ראשונה</button>
+        <button onClick={onCreate} style={{ ...primaryBtn, marginTop: 16 }}>{Ic.plus(14)} משימה ראשונה</button>
       )}
     </div>
   );
@@ -1298,25 +1541,28 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
   const sub = countSubtasks(task);
   const done = isDone(task);
   const overdue = !done && task.dueDate && task.dueDate < todayKey;
-  const accent = critical ? T.danger : (cat?.color ?? T.ink3);
+  const restBg = critical ? alpha(T.danger, 5) : T.bg2;
 
   return (
     <div
       data-task-row
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(); }}
       style={{
         display: "flex", alignItems: "center", gap: 11, cursor: "pointer",
-        background: T.bg2, border: "1px solid transparent",
-        borderInlineStart: `3px solid ${accent}`,
-        borderRadius: 13, padding: compact ? "9px 12px" : "11px 13px",
-        opacity: done ? 0.55 : 1,
-        transition: "border-color .35s cubic-bezier(0.32,0.72,0,1), background .35s cubic-bezier(0.32,0.72,0,1)",
+        background: restBg,
+        borderRadius: 14, padding: compact ? "9px 12px" : "11px 13px",
+        opacity: done ? 0.6 : 1,
+        transition: "background .3s var(--ease-soft), box-shadow .3s var(--ease-soft)",
       }}
       onMouseEnter={(e) => { e.currentTarget.style.background = T.surface2; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = T.bg2; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = restBg; }}
     >
       <button
         title={`סטטוס: ${STATUS_LABELS[task.status]} (לחיצה מקדמת)`}
+        aria-label={`סטטוס: ${STATUS_LABELS[task.status]} — לחיצה מקדמת`}
         onClick={(e) => {
           e.stopPropagation();
           // הבזק סיום — פעימה + הילה ירוקה, ורק אז המשימה עוברת ל"הושלמו"
@@ -1335,7 +1581,7 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
           background: "none", border: "none", cursor: "pointer", padding: 2,
           color: STATUS_COLORS[task.status], display: "inline-flex", flexShrink: 0,
         }}>
-        <StatusIcon status={task.status} size={18} />
+        <StatusIcon status={task.status} size={19} />
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -1346,6 +1592,14 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
           }}>
             {task.title || "ללא שם"}
           </span>
+          {task.assignedBy && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700,
+              color: T.accent, background: T.accentSoft, borderRadius: 99, padding: "1px 8px", flexShrink: 0,
+            }}>
+              {Ic.send(10)} מ{MANAGER_NAME}
+            </span>
+          )}
           <span className="num" style={{ fontSize: 10, color: T.ink3, flexShrink: 0 }}>
             נפתחה {formatDateHe(task.createdAt)}
           </span>
@@ -1355,8 +1609,8 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
             <Meta color={T.danger}>{Ic.flame(11)} קריטית</Meta>
           )}
           {cat && (
-            <Meta color={cat.color}>
-              <span style={{ width: 7, height: 7, borderRadius: 2.5, background: cat.color }} />
+            <Meta color={T.ink2}>
+              <span style={{ width: 7, height: 7, borderRadius: 99, background: cat.color }} />
               {cat.name}
             </Meta>
           )}
@@ -1420,7 +1674,7 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
         {cells.map((day, i) => {
-          if (day === null) return <div key={i} className="tj-calday" style={{ minHeight: 72, borderRadius: 10 }} />;
+          if (day === null) return <div key={i} className="tj-calday" style={{ minHeight: 72, borderRadius: 11 }} />;
           const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           const dayTasks = items[key] ?? [];
           const isToday = key === todayKey;
@@ -1431,37 +1685,37 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
               className="tj-calday"
               onClick={() => onSelectDate(key)}
               style={{
-                minHeight: 72, borderRadius: 10, padding: "4px 5px", cursor: "pointer",
-                background: isSelected ? T.mintSoft : T.bg2,
-                border: `1px solid ${isSelected ? `${alpha(T.mint, 40)}` : isToday ? T.accent : "transparent"}`,
+                minHeight: 72, borderRadius: 11, padding: "4px 5px", cursor: "pointer",
+                background: isSelected ? T.mintSoft : isToday ? T.accentSoft : T.bg2,
+                boxShadow: isSelected ? `inset 0 0 0 1.5px ${alpha(T.mint, 50)}` : isToday ? `inset 0 0 0 1.5px ${T.accent}` : "none",
                 display: "flex", flexDirection: "column", gap: 3, overflow: "hidden",
               }}
             >
               <span className="num" style={{
-                fontSize: 10.5, fontWeight: isToday ? 700 : 400,
+                fontSize: 10.5, fontWeight: isToday ? 800 : 500,
                 color: isToday ? T.accent : T.ink3,
               }}>
                 {day}
               </span>
               {dayTasks.slice(0, 3).map((t) => {
                 const c = t.categoryId ? catById[t.categoryId]?.color : undefined;
-                const col = t.critical ? T.danger : (c ?? T.accent);
+                const col = t.critical ? "var(--tj-danger)" : (c ?? "var(--tj-accent)");
                 return (
                   <button
                     key={t.id}
                     onClick={(e) => { e.stopPropagation(); onOpenTask(t.id); }}
                     title={t.title}
                     style={{
-                      display: "block", width: "100%", textAlign: "start",
-                      background: `${col}26`, color: mixToInk(col), border: "none",
-                      borderInlineStart: `2.5px solid ${col}`,
-                      borderRadius: 5, padding: "2px 5px", fontSize: 9.5, fontWeight: 500,
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      display: "flex", alignItems: "center", gap: 3, width: "100%", textAlign: "start",
+                      background: alpha(col, 14), color: mixToInk(col), border: "none",
+                      borderRadius: 6, padding: "2px 5px", fontSize: 9.5, fontWeight: 600,
+                      overflow: "hidden", whiteSpace: "nowrap",
                       cursor: "pointer", fontFamily: "inherit",
                       textDecoration: isDone(t) ? "line-through" : "none",
                     }}
                   >
-                    {t.title || "ללא שם"}
+                    <span style={{ width: 5, height: 5, borderRadius: 99, background: col, flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.title || "ללא שם"}</span>
                   </button>
                 );
               })}
@@ -1477,6 +1731,6 @@ function CalendarGrid({ year, month, todayKey, items, catById, selectedDate, onS
 }
 
 // טקסט על צ'יפ צבעוני בלוח — מעמיק לכיוון שחור בבהיר ומבהיר לכיוון לבן בכהה
-function mixToInk(hex: string): string {
-  return `color-mix(in srgb, ${hex} 62%, var(--tj-chipmix))`;
+function mixToInk(color: string): string {
+  return `color-mix(in srgb, ${color} 62%, var(--tj-chipmix))`;
 }

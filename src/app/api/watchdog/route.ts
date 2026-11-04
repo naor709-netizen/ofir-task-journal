@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const PROBLEM_TEXT: Record<string, string> = {
   "cron-never-ran": "משימת התזכורות ב-Supabase מעולם לא רצה",
   "cron-stale": "משימת התזכורות הפסיקה לרוץ — תזכורות לא יישלחו",
-  "no-devices": "אין אף מכשיר רשום להתראות",
+  "no-devices": "אין לאן לשלוח עדכונים — אין מכשיר פוש, SMS או טלגרם",
   "subscriptions-unreadable": "לא ניתן לקרוא את טבלת המנויים ב-Supabase",
   "backup-stale": "לא נשמר גיבוי מעל 48 שעות",
   "backup-not-configured": "טבלת הגיבויים לא קיימת — יש להריץ את supabase-cron.sql",

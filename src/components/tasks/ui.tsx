@@ -169,6 +169,7 @@ export const Ic = {
   refresh: (s?: number) => <I size={s}><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8" /><path d="M4 3.5V8h4.5M4 13a8 8 0 0 0 14.5 4.5L20 16" /><path d="M20 20.5V16h-4.5" /></I>,
   crown: (s?: number) => <I size={s} d="M4 18h16M4.5 15 3 7l5 3.5L12 5l4 5.5L21 7l-1.5 8h-15Z" />,
   backspace: (s?: number) => <I size={s}><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1Z" /><path d="m12.5 9.5 5 5M17.5 9.5l-5 5" /></I>,
+  fingerprint: (s?: number) => <I size={s}><path d="M6.5 6.2A8 8 0 0 1 20 12v1.5" /><path d="M4 9.5A8 8 0 0 0 4 12v3" /><path d="M8 12a4 4 0 0 1 8 0v2.5c0 2 .4 3.8 1.2 5.5" /><path d="M12 12v3.5c0 2.2.6 4.3 1.7 6" /><path d="M8 15.5c0 1.8.5 3.5 1.4 5" /><path d="M9.5 3.4A8 8 0 0 1 16 4.3" /></I>,
   logout: (s?: number) => <I size={s}><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 16l-4-4 4-4M5 12h11" /></I>,
 };
 

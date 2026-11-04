@@ -10,8 +10,11 @@ import {
   subscribeTeamMeta, getTeamMeta, getServerTeamMeta,
   subscribeTeamData, getTeamData, getServerTeamData, initTeamData, refetchTeamData,
   addMember, updateMember, removeMember, assignTask, upsertJournalRoot, deleteJournalRoot, patchJournalTask,
-  addJournalCategory, savePrefs, setManagerPin, lockManager,
+  addJournalCategory, savePrefs, setManagerPin, lockManager, lockOnOpenEnabled, setLockOnOpen,
 } from "@/lib/team";
+import {
+  biometricAvailable, biometricEnrolled, biometricLabel, enrollBiometric, removeBiometric,
+} from "@/lib/biometric";
 import {
   MANAGER_ID, MANAGER_NAME, PERSON_COLORS, MEMBER_COLOR_ORDER, personVar, journalPath,
   type PersonColor, type TeamMember,
@@ -346,6 +349,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
                   onChange={(v) => savePrefs({ ...meta.prefs, memberNew: v })} />
                 <PrefRow label="תמונת מצב הצוות בבריף הבוקר ובסיכום השבועי" on={meta.prefs.teamBrief}
                   onChange={(v) => savePrefs({ ...meta.prefs, teamBrief: v })} />
+                {meta.pin && <DeviceLockRows />}
                 <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                   <button onClick={() => setPinFlow("change")} style={ghostBtn}>{Ic.lock(12)} {meta.pin ? "החלפת קוד" : "הגדרת קוד"}</button>
                   {meta.pin && (
@@ -469,6 +473,72 @@ function PrefRow({ label, on, onChange }: { label: string; on: boolean; onChange
       <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>{label}</span>
       <Toggle on={on} onChange={onChange} label={label} />
     </div>
+  );
+}
+
+// הגדרות של המכשיר הזה בלבד (localStorage) — לא נוגעות ביומן או בענן
+function DeviceLockRows() {
+  const { toast } = useToast();
+  const label = biometricLabel();
+  const [avail, setAvail] = useState<boolean | null>(null);
+  const [enrolled, setEnrolled] = useState(() => biometricEnrolled());
+  const [lockOnOpen, setLockOnOpenState] = useState(() => lockOnOpenEnabled());
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    biometricAvailable().then((v) => { if (!cancelled) setAvail(v); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function toggleBio(on: boolean) {
+    if (!on) {
+      removeBiometric();
+      setEnrolled(false);
+      toast(`${label} כובה במכשיר הזה`, "info");
+      return;
+    }
+    setBusy(true);
+    const r = await enrollBiometric(MANAGER_NAME);
+    setBusy(false);
+    if (r.ok) {
+      setEnrolled(true);
+      setLockOnOpen(true);
+      setLockOnOpenState(true);
+      toast(`${label} הופעל — היומן ייפתח איתו בפעם הבאה`, "success");
+    } else if (r.reason !== "cancelled") {
+      toast(r.reason === "unsupported" ? `${label} לא זמין במכשיר או בדפדפן הזה` : `ההפעלה נכשלה`, "error");
+    }
+  }
+
+  function toggleLock(on: boolean) {
+    setLockOnOpen(on);
+    setLockOnOpenState(on);
+  }
+
+  return (
+    <>
+      {avail && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: `1px solid ${T.line}` }}>
+          <span style={{ color: T.accent, display: "inline-flex" }}>{Ic.fingerprint(16)}</span>
+          <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>
+            כניסה עם {label} במכשיר הזה
+            <span style={{ display: "block", fontSize: 11, color: T.ink3 }}>נשמר רק במכשיר — לא בענן ולא ביומן</span>
+          </span>
+          {busy ? <span style={{ fontSize: 11.5, color: T.ink3 }}>ממתין…</span> : <Toggle on={enrolled} onChange={toggleBio} label={`כניסה עם ${label}`} />}
+        </div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: `1px solid ${T.line}` }}>
+        <span style={{ color: T.ink3, display: "inline-flex" }}>{Ic.lock(15)}</span>
+        <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>
+          לבקש שוב בכל פתיחה
+          <span style={{ display: "block", fontSize: 11, color: T.ink3 }}>
+            אחרי 5 דקות מחוץ ליומן — {enrolled ? `${label} או קוד` : "קוד"}. כבוי: קוד פעם אחת במכשיר.
+          </span>
+        </span>
+        <Toggle on={lockOnOpen} onChange={toggleLock} label="לבקש שוב בכל פתיחה" />
+      </div>
+    </>
   );
 }
 

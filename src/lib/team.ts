@@ -228,16 +228,85 @@ function markUnlocked(hash: string) {
   try {
     localStorage.setItem(UNLOCK_KEY, hash);
     localStorage.setItem(DEVICE_KEY, "1");
+    noteSeen();
   } catch { /* ignore */ }
+}
+
+// כניסה בטביעת אצבע / Face ID: המכשיר אימת את בעליו — פותחים כמו קוד נכון
+export async function unlockWithBiometric(): Promise<boolean> {
+  const { verifyBiometric } = await import("./biometric");
+  const r = await verifyBiometric();
+  const p = getTeamMeta().pin;
+  if (!r.ok || !p) return false;
+  markUnlocked(p.hash);
+  return true;
 }
 
 export function markManagerDevice() {
   try { localStorage.setItem(DEVICE_KEY, "1"); } catch { /* ignore */ }
 }
 
+// ---------- נעילה בכל פתיחה (הגדרה של המכשיר, לא של היומן) ----------
+// כבוי: קוד פעם אחת במכשיר (ברירת המחדל). דלוק: אחרי 5 דקות מחוץ ליומן
+// מבקשים שוב — טביעת אצבע / Face ID או קוד.
+
+const LOCK_ON_OPEN_KEY = "ofir-lock-on-open";
+const SEEN_KEY = "ofir-manager-seen";
+const AWAY_MS = 5 * 60000;
+
+export function lockOnOpenEnabled(): boolean {
+  try { return localStorage.getItem(LOCK_ON_OPEN_KEY) === "1"; } catch { return false; }
+}
+
+export function setLockOnOpen(on: boolean) {
+  try {
+    if (on) { localStorage.setItem(LOCK_ON_OPEN_KEY, "1"); noteSeen(); }
+    else localStorage.removeItem(LOCK_ON_OPEN_KEY);
+  } catch { /* ignore */ }
+}
+
+function noteSeen() {
+  try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch { /* ignore */ }
+}
+
+function awayTooLong(): boolean {
+  if (!lockOnOpenEnabled()) return false;
+  const t = Number(localStorage.getItem(SEEN_KEY) || 0);
+  return !t || Date.now() - t > AWAY_MS;
+}
+
+let startChecked = false;
+
 export function isUnlocked(pin: ManagerPin | null): boolean {
   if (!pin) return true;
-  try { return localStorage.getItem(UNLOCK_KEY) === pin.hash; } catch { return false; }
+  try {
+    // בפתיחה הראשונה של העמוד: אם היומן היה סגור יותר מ-5 דקות — ננעל
+    if (!startChecked) {
+      startChecked = true;
+      if (awayTooLong()) localStorage.removeItem(UNLOCK_KEY);
+    }
+    return localStorage.getItem(UNLOCK_KEY) === pin.hash;
+  } catch { return false; }
+}
+
+// מעקב בזמן שהיומן פתוח: חזרה מהרקע אחרי 5 דקות → נעילה
+export function watchAutoLock(onLock: () => void): () => void {
+  function onVisibility() {
+    if (document.visibilityState === "hidden") { noteSeen(); return; }
+    if (awayTooLong() && localStorage.getItem(UNLOCK_KEY)) {
+      localStorage.removeItem(UNLOCK_KEY);
+      onLock();
+    }
+    noteSeen();
+  }
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pagehide", noteSeen);
+  const iv = setInterval(() => { if (document.visibilityState === "visible") noteSeen(); }, 30000);
+  return () => {
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("pagehide", noteSeen);
+    clearInterval(iv);
+  };
 }
 
 export function lockManager() {

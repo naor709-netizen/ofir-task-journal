@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { setActiveJournal } from "@/lib/tasks";
 import {
   subscribeTeamMeta, getTeamMeta, getServerTeamMeta, initTeamMeta, isUnlocked, verifyManagerPin,
+  unlockWithBiometric, watchAutoLock, setLockOnOpen,
 } from "@/lib/team";
+import {
+  biometricAvailable, biometricEnrolled, biometricLabel, enrollBiometric, bioOfferDismissed, dismissBioOffer,
+} from "@/lib/biometric";
 import { MANAGER_ID, MANAGER_NAME, memberById, type TeamMember } from "@/lib/journals";
 import TaskJournal from "./TaskJournal";
-import { T, Ic, useSpotlight } from "./ui";
+import { T, Ic, useSpotlight, primaryBtn, ghostBtn } from "./ui";
 
 // מעטפת היומן: בוחרת את היומן הפעיל, צובעת אותו בגוון האישי,
 // ושומרת על האזור של אופיר מאחורי קוד (כשיש צוות).
@@ -30,6 +34,13 @@ export default function JournalApp({ journalId, initialMember }: { journalId: st
   } else if (member) gate = "open";
   else if (!meta.loaded) gate = "loading";
   else gate = meta.mode === "cloud" ? "missing" : "open";
+
+  // "נעילה בכל פתיחה": חזרה ליומן אחרי 5 דקות ברקע מחזירה את מסך הנעילה
+  const watching = isManager && !!meta.pin && gate === "open";
+  useEffect(() => {
+    if (!watching) return;
+    return watchAutoLock(() => setUnlockTick((n) => n + 1));
+  }, [watching]);
 
   return (
     <div className="tj-app" data-person={color}>
@@ -76,6 +87,41 @@ function ManagerLock({ onUnlock }: { onUnlock: () => void }) {
   const [fails, setFails] = useState(0);
   const [coolUntil, setCoolUntil] = useState(0);
   const [now, setNow] = useState(0);
+  // טביעת אצבע / Face ID: "ready" — רשום במכשיר הזה; "offer" — אפשר להציע אחרי קוד נכון
+  const [bio, setBio] = useState<"none" | "ready" | "offer">("none");
+  const [bioBusy, setBioBusy] = useState(false);
+  const [offering, setOffering] = useState(false);
+  const label = biometricLabel();
+  const autoTried = useRef(false);
+
+  async function tryBio() {
+    setBioBusy(true);
+    const ok = await unlockWithBiometric();
+    setBioBusy(false);
+    if (ok) onUnlock();
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    biometricAvailable().then((avail) => {
+      if (cancelled || !avail) return;
+      if (biometricEnrolled()) {
+        setBio("ready");
+        // ניסיון אוטומטי אחד — דפדפנים שדורשים לחיצה פשוט ידחו, והכפתור נשאר
+        if (!autoTried.current) { autoTried.current = true; tryBio(); }
+      } else if (!bioOfferDismissed()) setBio("offer");
+    });
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function enableBio() {
+    setBioBusy(true);
+    const r = await enrollBiometric(MANAGER_NAME);
+    setBioBusy(false);
+    if (r.ok) setLockOnOpen(true);
+    dismissBioOffer();
+    onUnlock();
+  }
 
   useEffect(() => {
     if (!coolUntil) return;
@@ -92,7 +138,12 @@ function ManagerLock({ onUnlock }: { onUnlock: () => void }) {
     setBusy(true);
     const ok = await verifyManagerPin(code);
     setBusy(false);
-    if (ok) { onUnlock(); return; }
+    if (ok) {
+      // קוד נכון במכשיר שתומך בביומטריה — הצעה חד-פעמית לפעם הבאה
+      if (bio === "offer") { setOffering(true); return; }
+      onUnlock();
+      return;
+    }
     setError(true);
     setPin("");
     const f = fails + 1;
@@ -120,6 +171,39 @@ function ManagerLock({ onUnlock }: { onUnlock: () => void }) {
 
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
 
+  if (offering) {
+    return (
+      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div className="tj-pop" style={{
+          width: "min(360px, 100%)", textAlign: "center", padding: "30px 24px 24px",
+          background: "var(--tj-glass)", backdropFilter: "blur(20px) saturate(1.4)", WebkitBackdropFilter: "blur(20px) saturate(1.4)",
+          border: `1px solid ${T.line}`, borderRadius: 28,
+          boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 40px 80px -36px var(--tj-shadow-strong)",
+        }}>
+          <span style={{
+            width: 64, height: 64, borderRadius: 20, margin: "0 auto 14px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: T.accentSoft, color: T.accent,
+          }}>{Ic.fingerprint(32)}</span>
+          <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>
+            בפעם הבאה — עם {label}?
+          </h1>
+          <p style={{ margin: "8px 0 18px", fontSize: 13, color: T.ink2, lineHeight: 1.65 }}>
+            במקום להקליד קוד, היומן ייפתח עם {label}. הוא יבקש שוב בכל פתיחה אחרי 5 דקות בחוץ.
+            נשמר רק במכשיר הזה — שום דבר לא נשמר בענן או ביומן.
+          </p>
+          <button onClick={enableBio} disabled={bioBusy} style={{ ...primaryBtn, width: "100%", height: 48, borderRadius: 16 }}>
+            {Ic.fingerprint(17)} {bioBusy ? "ממתין לאישור…" : `הפעלת ${label}`}
+          </button>
+          <button onClick={() => { dismissBioOffer(); onUnlock(); }} disabled={bioBusy} style={{ ...ghostBtn, width: "100%", height: 42, marginTop: 8, border: "none" }}>
+            לא עכשיו
+          </button>
+          <p style={{ margin: "10px 0 0", fontSize: 11, color: T.ink3 }}>אפשר להפעיל או לכבות בכל עת בטאב הצוות ← עדכונים ופרטיות.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div className="tj-pop" style={{
@@ -139,6 +223,16 @@ function ManagerLock({ onUnlock }: { onUnlock: () => void }) {
         <p style={{ margin: "6px 0 20px", fontSize: 13, color: T.ink2 }}>
           {cooling ? `יותר מדי ניסיונות — נסו שוב בעוד ${Math.ceil((coolUntil - now) / 1000)} שניות` : "היומן ודשבורד הצוות. הזינו את הקוד בן 4 הספרות."}
         </p>
+        {bio === "ready" && (
+          <button onClick={tryBio} disabled={bioBusy || cooling} style={{
+            ...primaryBtn, width: "100%", height: 50, borderRadius: 16, marginBottom: 18, fontSize: 14.5,
+          }}>
+            {Ic.fingerprint(19)} {bioBusy ? "ממתין לאישור…" : `כניסה עם ${label}`}
+          </button>
+        )}
+        {bio === "ready" && (
+          <div style={{ fontSize: 11.5, color: T.ink3, margin: "-6px 0 14px" }}>או בקוד:</div>
+        )}
         <div className={error ? "tj-shake" : undefined} style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 22, direction: "ltr" }}
           aria-live="polite" aria-label={`${pin.length} מתוך 4 ספרות`}>
           {[0, 1, 2, 3].map((i) => (

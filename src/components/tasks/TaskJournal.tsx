@@ -119,7 +119,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   }, [journalId]);
   const smsLinked = !!teamMeta.sms[journalId];
   const telegramLinked = !!teamMeta.telegram[journalId];
-  const phoneReady = smsLinked || telegramLinked || pushState === "on";
+  const phoneReady = telegramLinked || pushState === "on" || smsLinked;
 
   function persist(next: JournalData) {
     if (!setJournalData(next)) toast("השמירה נכשלה — ייתכן שהקבצים המצורפים גדולים מדי", "error");
@@ -514,7 +514,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
           }}>
             {theme === "dark" ? Ic.sun(15) : Ic.moon(15)}
           </button>
-          <button onClick={() => setNotifyOpen(true)} title="עדכונים לטלפון" style={{
+          <button onClick={() => setNotifyOpen(true)} title="התראות לטלפון" style={{
             display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600, fontFamily: "inherit",
             height: 34, padding: "0 13px", borderRadius: 99, cursor: "pointer", flexShrink: 0,
             border: `1px solid ${phoneReady ? alpha(T.mint, 40) : T.line}`,
@@ -528,7 +528,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                 background: phoneReady ? T.mint : T.amber, boxShadow: `0 0 0 2px ${T.surface}`,
               }} />
             </span>
-            <span className="tj-notify-label">{phoneReady ? (smsLinked ? "SMS מחובר" : telegramLinked ? "טלגרם מחובר" : "התראות פעילות") : "עדכונים לטלפון"}</span>
+            <span className="tj-notify-label">{phoneReady ? (telegramLinked ? "טלגרם מחובר" : pushState === "on" ? "התראות פעילות" : "SMS מחובר") : "התראות לטלפון"}</span>
           </button>
           {!isTeam && (
             <button onClick={createTask} className="tj-newbtn" style={{ ...primaryBtn, padding: "6px 7px 6px 18px", height: 40 }}>

@@ -12,7 +12,7 @@ import { T, alpha, Ic, Sheet, primaryBtn, ghostBtn, softBtn, inputStyle } from "
 
 type PushState = "unsupported" | "off" | "on" | "denied";
 
-// מרכז העדכונים: SMS (הודעה רגילה לטלפון) + טלגרם (אם הוגדר) + התראות דפדפן + אבחון מלא
+// מרכז ההתראות: טלגרם + התראות מובנות (שניהם חינם) + SMS בתשלום רק אם הוגדר + אבחון מלא
 export function NotifyCenter({ journalId, personName, pushState, setPushState, onClose }: {
   journalId: string;
   personName: string;
@@ -114,7 +114,7 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
       const parts = [r.sms === "sent" ? "SMS" : "", r.pushed ? `${r.pushed} מכשירים` : "", r.telegram === "sent" ? "טלגרם" : ""].filter(Boolean).join(" + ");
       toast(`הודעת בדיקה נשלחה (${parts}) — אמורה להגיע תוך שניות`, "success");
     } else {
-      toast(r.reason === "no-subscriptions" ? "אין לאן לשלוח — חברו מספר טלפון ל-SMS" : `השליחה נכשלה (${r.reason ?? ""})`, "error");
+      toast(r.reason === "no-subscriptions" ? "אין לאן לשלוח — חברו טלגרם או הפעילו התראות" : `השליחה נכשלה (${r.reason ?? ""})`, "error");
     }
   }
 
@@ -123,25 +123,27 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
     (window.matchMedia?.("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true);
 
   return (
-    <Sheet title="עדכונים לטלפון" icon={Ic.phone(17)} onClose={onClose} width={460}>
+    <Sheet title="התראות לטלפון" icon={Ic.bell(17)} onClose={onClose} width={460}>
       <p style={{ margin: "0 0 16px", fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
         {isManager
-          ? "תזכורות, בריף בוקר ועדכונים מהצוות — ישר לטלפון, גם כשהיומן סגור."
-          : `תזכורות, בריף בוקר ומשימות ש${MANAGER_NAME} שולח — ישר לטלפון, גם כשהיומן סגור.`}
+          ? "התראה שקופצת בטלפון — תזכורות, בריף בוקר ועדכונים מהצוות. בחינם, גם כשהיומן סגור."
+          : `התראה שקופצת בטלפון — תזכורות, בריף בוקר ומשימות ש${MANAGER_NAME} שולח. בחינם, גם כשהיומן סגור.`}
       </p>
 
-      {/* ---- SMS: הודעה רגילה לטלפון ---- */}
-      <SmsChannel journalId={journalId} isManager={isManager} liveMask={meta.sms[journalId]?.mask ?? null} onStatus={setSms} />
-
-      {/* ---- טלגרם: מוצג רק אם הבוט הוגדר בשרת ---- */}
-      {tg?.configured && (
+      {/* ---- טלגרם: חינם, קופץ בכל טלפון ---- */}
       <Channel
         icon={Ic.send(18)}
         title="טלגרם"
-        badge={linked ? { text: "מחובר", tone: "ok" } : undefined}
-        subtitle="ערוץ נוסף, לא חובה: הודעות בטלגרם עם כפתורי ״בוצע״ ו״עוד שעה״."
+        badge={linked ? { text: "מחובר", tone: "ok" } : { text: "מומלץ · חינם", tone: "accent" }}
+        subtitle="התראה קופצת כמו הודעה רגילה — באייפון ובאנדרואיד, גם כשהיומן סגור. כולל כפתורי ״✓ בוצע״ ו״⏰ עוד שעה״."
       >
-        {tg.webhook === "preview-skip" ? (
+        {tg === null ? (
+          <div className="tj-skel" style={{ height: 44, borderRadius: 12 }} />
+        ) : !tg.configured ? (
+          isManager ? <TelegramSetupSteps /> : (
+            <Note tone="amber">הבוט של היומן עדיין לא הופעל. {MANAGER_NAME} צריך להפעיל אותו פעם אחת — ואז מחברים כאן בלחיצה.</Note>
+          )
+        ) : tg.webhook === "preview-skip" ? (
           <Note tone="amber">זו כתובת בדיקה (preview). את טלגרם מחברים מהכתובת הראשית של היומן.</Note>
         ) : linked ? (
           <div>
@@ -170,9 +172,9 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
               {Ic.send(15)} {busy === "link" ? "פותח את טלגרם…" : waiting ? "ממתין לאישור בטלגרם…" : "חיבור טלגרם"}
             </button>
             <ol style={{ margin: "12px 0 0", paddingInlineStart: 18, fontSize: 12, color: T.ink2, lineHeight: 1.75 }}>
+              <li>אין טלגרם? מורידים בחינם מ-App Store או Google Play.</li>
               <li>לוחצים ״חיבור טלגרם״ — הבוט של היומן נפתח.</li>
-              <li>לוחצים <b>Start</b> (או ״התחל״) בצ׳אט.</li>
-              <li>חוזרים לכאן — החיבור מאושר אוטומטית.</li>
+              <li>לוחצים <b>Start</b> (או ״התחל״) בצ׳אט — וזהו.</li>
             </ol>
             {waiting && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: T.accent }}>
@@ -183,31 +185,34 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
           </div>
         )}
       </Channel>
-      )}
 
-      {/* ---- התראות דפדפן ---- */}
+      {/* ---- התראות מובנות: חינם, בלי אפליקציה ---- */}
       <Channel
         icon={Ic.bell(18)}
-        title="התראות במכשיר הזה"
-        badge={pushState === "on" ? { text: "פעיל", tone: "ok" } : pushState === "denied" ? { text: "חסום", tone: "danger" } : undefined}
-        subtitle="התראת מערכת רגילה מהיומן. באייפון עובד רק כשהיומן מותקן במסך הבית."
+        title="התראות מהיומן עצמו"
+        badge={pushState === "on" ? { text: "פעיל", tone: "ok" } : pushState === "denied" && !(ios && !standalone) ? { text: "חסום", tone: "danger" } : { text: "חינם", tone: "accent" }}
+        subtitle="בלי אפליקציה נוספת. באנדרואיד עובד מיד; באייפון — אחרי הוספת היומן למסך הבית."
       >
         {pushState === "on" ? (
-          <Note tone="ok">ההתראות פעילות במכשיר הזה{ios ? "" : " — גם כשהיומן סגור"}.</Note>
+          <Note tone="ok">ההתראות פעילות במכשיר הזה — יקפצו גם כשהיומן סגור.</Note>
+        ) : ios && !standalone ? (
+          <IphoneSteps />
         ) : pushState === "denied" ? (
-          <Note tone="danger">הדפדפן חוסם התראות מהיומן. יש לאפשר אותן בהגדרות האתר בדפדפן, ואז לרענן.</Note>
-        ) : pushState === "unsupported" || (ios && !standalone) ? (
-          <Note tone="amber">
-            {ios
-              ? <>באייפון: לחצו על <b>שיתוף</b> ← <b>הוספה למסך הבית</b>, פתחו את היומן מהאייקון החדש, ואז הפעילו כאן. או פשוט חברו טלגרם למעלה.</>
-              : "הדפדפן הזה לא תומך בהתראות. מומלץ לחבר טלגרם."}
+          <Note tone="danger">
+            הטלפון חוסם התראות מהיומן.{" "}
+            {ios ? "בהגדרות האייפון ← התראות ← היומן ← לאפשר התראות." : "בהגדרות הדפדפן ← הגדרות אתר ← התראות ← לאפשר ליומן, ואז לרענן."}
           </Note>
+        ) : pushState === "unsupported" ? (
+          <Note tone="amber">הדפדפן הזה לא תומך בהתראות. פתחו את היומן ב-Chrome (אנדרואיד) או ב-Safari (אייפון), או חברו טלגרם.</Note>
         ) : (
-          <button onClick={turnOnPush} disabled={busy === "push"} style={softBtn}>
-            {Ic.bell(13)} {busy === "push" ? "מפעיל…" : "הפעלת התראות במכשיר הזה"}
+          <button onClick={turnOnPush} disabled={busy === "push"} style={{ ...softBtn, height: 42, width: "100%" }}>
+            {Ic.bell(14)} {busy === "push" ? "מפעיל…" : "הפעלת התראות במכשיר הזה"}
           </button>
         )}
       </Channel>
+
+      {/* ---- SMS: בתשלום — מוצג רק אם הוגדר Twilio ---- */}
+      <SmsChannel journalId={journalId} liveMask={meta.sms[journalId]?.mask ?? null} onStatus={setSms} />
 
       {/* ---- בדיקה ואבחון ---- */}
       <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
@@ -225,9 +230,8 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
 }
 
 // ---- SMS: מספר טלפון + קוד אימות בן 6 ספרות ----
-function SmsChannel({ journalId, isManager, liveMask, onStatus }: {
+function SmsChannel({ journalId, liveMask, onStatus }: {
   journalId: string;
-  isManager: boolean;
   liveMask: string | null;
   onStatus: (s: SmsStatus) => void;
 }) {
@@ -303,20 +307,17 @@ function SmsChannel({ journalId, isManager, liveMask, onStatus }: {
   const mask = linked?.mask ?? liveMask;
   const showLinked = !!linked && linked.readable && stage === null;
 
+  // SMS עולה כסף — מוצג רק כשמישהו בחר להגדיר את Twilio
+  if (!st?.configured) return null;
+
   return (
     <Channel
       icon={Ic.phone(18)}
       title="הודעות SMS"
-      badge={showLinked ? { text: "מחובר", tone: "ok" } : { text: "מומלץ", tone: "accent" }}
-      subtitle="הודעה רגילה לטלפון, באפליקציית ההודעות. בלי התקנה, עובד בכל טלפון."
+      badge={showLinked ? { text: "מחובר", tone: "ok" } : { text: "בתשלום", tone: "accent" }}
+      subtitle="הודעת SMS רגילה (Twilio, כמה סנטים להודעה)."
     >
-      {st === null ? (
-        <div className="tj-skel" style={{ height: 44, borderRadius: 12 }} />
-      ) : !st.configured ? (
-        isManager ? <TwilioSetupSteps /> : (
-          <Note tone="amber">שליחת SMS עדיין לא הופעלה ביומן. {MANAGER_NAME} צריך להפעיל אותה פעם אחת — ואז מזינים כאן מספר טלפון.</Note>
-        )
-      ) : showLinked ? (
+      {showLinked ? (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 13, background: T.mintSoft, color: T.mint, fontSize: 13, fontWeight: 600 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -391,17 +392,41 @@ function SmsChannel({ journalId, isManager, liveMask, onStatus }: {
   );
 }
 
-function TwilioSetupSteps() {
+function TelegramSetupSteps() {
   return (
     <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.7 }}>
-      <Note tone="amber">שליחת SMS עוד לא הוגדרה. זה חד-פעמי, כ-5 דקות:</Note>
+      <Note tone="amber">הבוט עוד לא הוגדר. זה חד-פעמי, בחינם, כ-2 דקות:</Note>
       <ol style={{ margin: "10px 0 0", paddingInlineStart: 18 }}>
-        <li>נרשמים ב-<a href="https://www.twilio.com/try-twilio" target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>twilio.com</a> ומעתיקים מה-Console את <code className="num">Account SID</code> ו-<code className="num">Auth Token</code>.</li>
-        <li>ב-Messaging → Settings → Geo permissions מסמנים את <b>ישראל</b>.</li>
-        <li>קונים מספר שולח, או משתמשים בשם שולח באותיות לועזיות (למשל <code className="num">Yoman</code>).</li>
-        <li>ב-Vercel → Environment Variables מוסיפים <code className="num">TWILIO_ACCOUNT_SID</code>, <code className="num">TWILIO_AUTH_TOKEN</code>, <code className="num">TWILIO_FROM</code>, ופורסים מחדש.</li>
-        <li>חוזרים לכאן ומזינים מספר טלפון.</li>
+        <li>בטלגרם פותחים את <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>@BotFather</a> ושולחים <code className="num">/newbot</code>.</li>
+        <li>בוחרים שם (למשל ״היומן של אופיר״) ושם משתמש שמסתיים ב-<code className="num">bot</code>.</li>
+        <li>מעתיקים את הטוקן שמתקבל.</li>
+        <li>ב-Vercel → Settings → Environment Variables מוסיפים <code className="num">TELEGRAM_BOT_TOKEN</code> עם הטוקן, ופורסים מחדש.</li>
+        <li>חוזרים לכאן ולוחצים ״חיבור טלגרם״. נדין עושה את אותו הדבר מהיומן שלה.</li>
       </ol>
+    </div>
+  );
+}
+
+// באייפון התראות מהיומן עובדות רק כשהוא מותקן במסך הבית (iOS 16.4 ומעלה)
+function IphoneSteps() {
+  const step = (n: number, body: React.ReactNode) => (
+    <li style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+      <span className="num" style={{
+        width: 22, height: 22, borderRadius: 99, flexShrink: 0, background: T.surface, color: T.accent,
+        display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, boxShadow: T.shadowSm,
+      }}>{n}</span>
+      <span style={{ paddingTop: 2 }}>{body}</span>
+    </li>
+  );
+  return (
+    <div>
+      <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 9, fontSize: 12.5, color: T.ink, lineHeight: 1.55 }}>
+        {step(1, <>פותחים את היומן ב-<b>Safari</b>.</>)}
+        {step(2, <>לוחצים על כפתור השיתוף <span style={{ display: "inline-flex", verticalAlign: "-2px", color: T.accent }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4" /><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" /></svg></span> בתחתית המסך.</>)}
+        {step(3, <>בוחרים <b>״הוספה למסך הבית״</b> ← ״הוסף״.</>)}
+        {step(4, <>פותחים את היומן <b>מהאייקון החדש</b>, חוזרים לכאן ולוחצים ״הפעלת התראות״.</>)}
+      </ol>
+      <p style={{ margin: "10px 0 0", fontSize: 11.5, color: T.ink3 }}>נדרש iOS 16.4 ומעלה. אם זה מסובך — טלגרם למעלה עובד מיד.</p>
     </div>
   );
 }
@@ -442,9 +467,9 @@ function DiagList({ d, now, telegram, linked, sms, personName }: { d: PushDiag; 
   const smsLinked = !!sms?.linked?.readable;
   const hbAgeMin = d.heartbeatAt ? Math.round((now - new Date(d.heartbeatAt).getTime()) / 60000) : null;
   const rows: { label: string; ok: boolean | null; detail?: string }[] = [
-    { label: "SMS מוגדר בשרת (Twilio)", ok: !!sms?.configured, detail: sms?.configured ? undefined : "חסרים TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM ב-Vercel" },
-    { label: `מספר טלפון מחובר ליומן של ${personName}`, ok: smsLinked, detail: sms?.linked ? (sms.linked.readable ? sms.linked.mask : "צריך לחבר את המספר מחדש") : undefined },
-    ...(telegram?.configured ? [{ label: `טלגרם מחובר ליומן של ${personName}`, ok: linked as boolean | null }] : []),
+    { label: "בוט טלגרם מוגדר בשרת", ok: !!telegram?.configured, detail: telegram?.configured ? undefined : "חסר TELEGRAM_BOT_TOKEN ב-Vercel (חינם, README)" },
+    { label: `טלגרם מחובר ליומן של ${personName}`, ok: linked },
+    ...(sms?.configured ? [{ label: `SMS מחובר ליומן של ${personName}`, ok: smsLinked as boolean | null, detail: sms.linked ? (sms.linked.readable ? sms.linked.mask : "צריך לחבר את המספר מחדש") : undefined }] : []),
     { label: "הרשאת התראות בדפדפן", ok: d.permission === "granted" ? true : d.permission === "default" ? null : false, detail: d.permission === "denied" ? "נדחתה" : d.permission === "unsupported" ? "לא נתמך" : d.permission === "default" ? "טרם התבקשה" : undefined },
     { label: "המכשיר הזה רשום להתראות", ok: d.deviceSubscribed },
     { label: "הרישום של המכשיר קיים בענן", ok: d.deviceInCloud, detail: d.deviceInCloud === false ? "נמחק — לחיצה על ״הפעלת התראות״ תרשום מחדש" : undefined },
@@ -456,9 +481,9 @@ function DiagList({ d, now, telegram, linked, sms, personName }: { d: PushDiag; 
   ];
 
   let verdict = "הכול תקין: עדכונים יגיעו לטלפון גם כשהיומן סגור.";
-  if (!smsLinked && !linked && !(d.deviceSubscribed && d.permission === "granted")) verdict = sms?.configured
-    ? "אין עדיין ערוץ לטלפון — הכי פשוט להזין מספר טלפון ל-SMS למעלה."
-    : "אין עדיין ערוץ לטלפון. יש להגדיר את Twilio ב-Vercel (README) ואז להזין מספר טלפון.";
+  if (!smsLinked && !linked && !(d.deviceSubscribed && d.permission === "granted")) verdict = telegram?.configured
+    ? "אין עדיין התראות לטלפון — הכי פשוט ללחוץ ״חיבור טלגרם״ למעלה."
+    : "אין עדיין התראות לטלפון. הפעילו ״התראות מהיומן עצמו״ למעלה, או הגדירו את בוט הטלגרם (חינם, README).";
   else if (hbAgeMin === null || hbAgeMin > 3) verdict = "שרת התזכורות לא רץ: תזכורות מתוזמנות לא יישלחו. יש להריץ את supabase-cron.sql ב-Supabase (README).";
   else if (d.pushErrors?.some((f) => f.status === 403)) verdict = "שרת הפוש דוחה את המפתחות (403) — כנראה שמפתחות VAPID הוחלפו. כבו והפעילו מחדש התראות בכל מכשיר, או הסתמכו על SMS.";
 

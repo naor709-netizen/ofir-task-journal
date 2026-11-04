@@ -26,6 +26,7 @@ export interface TeamMeta {
   prefs: NotifyPrefs;
   telegram: Record<string, TelegramLink>;
   sms: Record<string, SmsLinkInfo>;
+  push: Record<string, number>; // כמה מכשירים עם התראות פעילות לכל יומן
   loaded: boolean; // נטען מהמקור (ענן או מקומי) — לא רק מהמטמון
   mode: "cloud" | "local";
 }
@@ -36,7 +37,7 @@ const DEVICE_KEY = "ofir-manager-device";
 
 function readCache(): TeamMeta {
   const base: TeamMeta = {
-    roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {},
+    roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, push: {},
     loaded: false, mode: hasCloud ? "cloud" : "local",
   };
   if (typeof window === "undefined") return base;
@@ -51,6 +52,7 @@ function readCache(): TeamMeta {
       prefs: { ...DEFAULT_PREFS, ...(p.prefs ?? {}) },
       telegram: p.telegram ?? {},
       sms: p.sms ?? {},
+      push: p.push ?? {},
       // בלי ענן המטמון הוא המקור עצמו
       loaded: !hasCloud,
     };
@@ -62,7 +64,7 @@ function readCache(): TeamMeta {
 let meta: TeamMeta | null = null;
 const metaListeners = new Set<() => void>();
 const SERVER_META: TeamMeta = {
-  roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, loaded: false, mode: "cloud",
+  roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, push: {}, loaded: false, mode: "cloud",
 };
 
 export function subscribeTeamMeta(cb: () => void): () => void {
@@ -81,7 +83,7 @@ function setMeta(next: TeamMeta) {
   meta = next;
   try {
     localStorage.setItem(META_CACHE, JSON.stringify({
-      roster: next.roster, pin: next.pin, prefs: next.prefs, telegram: next.telegram, sms: next.sms,
+      roster: next.roster, pin: next.pin, prefs: next.prefs, telegram: next.telegram, sms: next.sms, push: next.push,
     }));
   } catch { /* quota */ }
   metaListeners.forEach((l) => l());
@@ -114,10 +116,12 @@ let metaTimer: ReturnType<typeof setTimeout> | null = null;
 async function refetchMeta() {
   try {
     const { supabase } = await import("./supabase");
-    const [main, tg, sms] = await Promise.all([
+    const [main, tg, sms, subs] = await Promise.all([
       supabase.from("journal_meta").select("key,payload").in("key", [META.team, META.pin, META.prefs]),
       supabase.from("journal_meta").select("key,payload").like("key", "tg:%"),
       supabase.from("journal_meta").select("key,payload").like("key", "sms:%"),
+      // רק השיוך ליומן — לא מפתחות המנוי
+      supabase.from("push_subscriptions").select("journal:subscription->>journalId"),
     ]);
     if (main.error) throw main.error;
     const rows = (main.data ?? []) as { key: string; payload: unknown }[];
@@ -132,6 +136,11 @@ async function refetchMeta() {
     for (const r of (sms.data ?? []) as { key: string; payload: { mask?: string; linkedAt?: string } | null }[]) {
       smsLinks[r.key.slice(4)] = r.payload?.mask && r.payload.linkedAt ? { mask: r.payload.mask, linkedAt: r.payload.linkedAt } : null;
     }
+    const push: Record<string, number> = {};
+    for (const r of (subs.data ?? []) as { journal: string | null }[]) {
+      const jid = r.journal || MANAGER_ID;
+      push[jid] = (push[jid] ?? 0) + 1;
+    }
     const pin = get(META.pin) as ManagerPin | undefined;
     setMeta({
       roster: normalizeRoster(get(META.team)),
@@ -139,6 +148,7 @@ async function refetchMeta() {
       prefs: { ...DEFAULT_PREFS, ...((get(META.prefs) as Partial<NotifyPrefs>) ?? {}) },
       telegram,
       sms: smsLinks,
+      push,
       loaded: true,
       mode: "cloud",
     });

@@ -5,7 +5,7 @@
 // localStorage cache + Supabase cloud sync (optional)
 // ============================================
 
-import { MANAGER_ID, metaKey, journalOfPayload } from "./journals";
+import { MANAGER_ID, metaKey, journalOfPayload, rowPayload } from "./journals";
 
 export type TaskNature = "personal" | "urgent" | "routine";
 export type TaskStatus = "todo" | "in_progress" | "done";
@@ -361,7 +361,7 @@ async function flushPush() {
   const roots = snap.tasks.filter((t) => dirtyRoots.has(t.id));
   const upserts = roots.map((t) => ({
     id: t.id,
-    payload: { ...t, journalId: journal },
+    payload: rowPayload(t, journal),
     updated_at: new Date().toISOString(),
   }));
   const dels = [...deletedRoots];

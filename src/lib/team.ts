@@ -7,7 +7,7 @@
 
 import {
   MANAGER_ID, META, DEFAULT_PREFS, metaKey, journalOfPayload, normalizeRoster, newJournalId,
-  MEMBER_COLOR_ORDER,
+  MEMBER_COLOR_ORDER, rowPayload,
   type TeamRoster, type TeamMember, type ManagerPin, type NotifyPrefs, type PersonColor,
 } from "./journals";
 import {
@@ -459,7 +459,7 @@ export async function upsertJournalRoot(journalId: string, root: Task) {
   try {
     const { supabase } = await import("./supabase");
     const { error } = await supabase.from("journal_tasks").upsert({
-      id: root.id, payload: { ...root, journalId }, updated_at: new Date().toISOString(),
+      id: root.id, payload: rowPayload(root, journalId), updated_at: new Date().toISOString(),
     });
     if (error) throw error;
   } finally {

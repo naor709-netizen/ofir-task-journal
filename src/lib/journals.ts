@@ -81,6 +81,17 @@ export function journalOfPayload(payload: { journalId?: string | null } | null |
   return payload?.journalId || MANAGER_ID;
 }
 
+// מה נשמר בשורה בענן: אצל אופיר — המשימה בדיוק כמו שהייתה תמיד (בלי שדה נוסף);
+// אצל איש צוות — עם journalId, כדי לדעת של מי השורה
+export function rowPayload<T extends object>(task: T, journalId: string): T & { journalId?: string } {
+  if (journalId === MANAGER_ID) {
+    const copy = { ...task } as T & { journalId?: string };
+    delete copy.journalId;
+    return copy;
+  }
+  return { ...task, journalId };
+}
+
 export function journalPath(journalId: string): string {
   return journalId === MANAGER_ID ? "/" : `/j/${journalId}`;
 }

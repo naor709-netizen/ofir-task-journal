@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MANAGER_ID, journalOfPayload } from "@/lib/journals";
+import { MANAGER_ID, journalOfPayload, rowPayload } from "@/lib/journals";
 import { dateKey, isDone, flatten, type Task } from "./automation";
 
 // ============================================================
@@ -43,7 +43,7 @@ export function findRootOf(rows: Row[], taskId: string): Row | null {
 export async function saveRoot(sb: SupabaseClient, journalId: string, root: Task) {
   const { error } = await sb.from("journal_tasks").upsert({
     id: root.id,
-    payload: { ...root, journalId },
+    payload: rowPayload(root, journalId),
     updated_at: new Date().toISOString(),
   });
   if (error) throw error;

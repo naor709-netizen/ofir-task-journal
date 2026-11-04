@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { MANAGER_ID, isValidJournalId, memberById, personName } from "@/lib/journals";
+import { MANAGER_ID, isValidJournalId, memberById, personName, firstName } from "@/lib/journals";
 import { loadRoster, dateKey } from "@/lib/server/automation";
 import {
   SMS_META, SMS_PENDING, smsConfigured, normalizePhone, maskPhone, encryptPhone, decryptPhone,
@@ -129,7 +129,7 @@ export async function POST(req: Request) {
     if (phone) {
       await sendSms(phone, journalId === MANAGER_ID
         ? `מחובר ✓ מעכשיו תזכורות, בריף בוקר ועדכוני הצוות יגיעו לכאן ב-SMS.`
-        : `מחובר ✓ היי ${name}, מעכשיו תזכורות ומשימות מאופיר יגיעו לכאן ב-SMS.`);
+        : `מחובר ✓ היי ${firstName(name)}, מעכשיו תזכורות ומשימות מאופיר יגיעו לכאן ב-SMS.`);
     }
     return NextResponse.json({ ok: true, mask: link.mask });
   }

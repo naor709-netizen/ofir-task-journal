@@ -16,7 +16,7 @@ import {
   biometricAvailable, biometricEnrolled, biometricLabel, enrollBiometric, removeBiometric,
 } from "@/lib/biometric";
 import {
-  MANAGER_ID, MANAGER_NAME, PERSON_COLORS, MEMBER_COLOR_ORDER, personVar, journalPath,
+  MANAGER_ID, MANAGER_NAME, PERSON_COLORS, MEMBER_COLOR_ORDER, SUGGESTED_MEMBER_NAME, personVar, journalPath,
   type PersonColor, type TeamMember,
 } from "@/lib/journals";
 import { parseQuickAdd } from "@/lib/quickadd";
@@ -112,6 +112,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
 
   const members = useMemo(() => people.filter((p) => !p.isManager), [people]);
   const managerSms = meta.sms[MANAGER_ID] ?? null;
+  const suggestedName = meta.roster.members.some((m) => m.name.trim() === SUGGESTED_MEMBER_NAME) ? "" : SUGGESTED_MEMBER_NAME;
   const teamOpen = members.reduce((n, p) => n + stats[p.id].open.length, 0);
   const teamDoneWeek = members.reduce((n, p) => n + stats[p.id].doneWeek.length, 0);
   const teamOverdue = members.reduce((n, p) => n + stats[p.id].overdue.length, 0);
@@ -209,7 +210,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
       </section>
 
       {noMembers ? (
-        <Onboarding onAdd={() => setAdding(true)} onNotify={onOpenNotify} phoneLinked={!!meta.sms[MANAGER_ID] || !!meta.telegram[MANAGER_ID]} />
+        <Onboarding onAdd={() => setAdding(true)} onNotify={onOpenNotify} phoneLinked={!!meta.sms[MANAGER_ID] || !!meta.telegram[MANAGER_ID]} suggestedName={suggestedName} />
       ) : (
         <>
           {/* ===== כרטיסי אנשים ===== */}
@@ -375,6 +376,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
       {/* ===== dialogs ===== */}
       {adding && (
         <AddMemberDialog
+          initialName={suggestedName}
           needsPin={!meta.pin}
           usedColors={meta.roster.members.map((m) => m.color)}
           onClose={() => setAdding(false)}
@@ -725,7 +727,7 @@ function PaceChart({ people, stats, todayKey }: { people: Person[]; stats: Recor
   );
 }
 
-function Onboarding({ onAdd, onNotify, phoneLinked }: { onAdd: () => void; onNotify: () => void; phoneLinked: boolean }) {
+function Onboarding({ onAdd, onNotify, phoneLinked, suggestedName }: { onAdd: () => void; onNotify: () => void; phoneLinked: boolean; suggestedName: string }) {
   const steps = [
     { icon: Ic.userPlus(18), title: "מוסיפים איש צוות", text: "שם וצבע — ונוצר יומן מלא משלו, עם כל היכולות שיש לך." },
     { icon: Ic.share(18), title: "שולחים את הקישור", text: "בוואטסאפ או בהעתקה. מוסיפים למסך הבית ומזינים מספר טלפון ל-SMS." },
@@ -747,7 +749,7 @@ function Onboarding({ onAdd, onNotify, phoneLinked }: { onAdd: () => void; onNot
         ))}
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-        <button onClick={onAdd} style={{ ...primaryBtn, height: 44 }}>{Ic.userPlus(15)} הוספת איש צוות ראשון</button>
+        <button onClick={onAdd} style={{ ...primaryBtn, height: 44 }}>{Ic.userPlus(15)} {suggestedName ? `הוספת ${suggestedName} לצוות` : "הוספת איש צוות ראשון"}</button>
         {!phoneLinked && <button onClick={onNotify} style={{ ...softBtn, height: 44, padding: "0 16px" }}>{Ic.phone(13)} קודם, חיבור הטלפון שלי ל-SMS</button>}
       </div>
       <style>{`@media (max-width: 900px) { .tj-onboard { grid-template-columns: 1fr 1fr !important; } } @media (max-width: 520px) { .tj-onboard { grid-template-columns: 1fr !important; } }`}</style>
@@ -810,11 +812,11 @@ function PinSetup({ onDone }: { onDone: () => void }) {
   );
 }
 
-function AddMemberDialog({ needsPin, usedColors, onClose, onCreated }: {
-  needsPin: boolean; usedColors: PersonColor[]; onClose: () => void; onCreated: (m: TeamMember) => void;
+function AddMemberDialog({ initialName = "", needsPin, usedColors, onClose, onCreated }: {
+  initialName?: string; needsPin: boolean; usedColors: PersonColor[]; onClose: () => void; onCreated: (m: TeamMember) => void;
 }) {
   const [step, setStep] = useState<"pin" | "details">(needsPin ? "pin" : "details");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [role, setRole] = useState("");
   const [color, setColor] = useState<PersonColor>(MEMBER_COLOR_ORDER.find((c) => !usedColors.includes(c)) ?? "teal");
   const [busy, setBusy] = useState(false);
@@ -837,7 +839,7 @@ function AddMemberDialog({ needsPin, usedColors, onClose, onCreated }: {
             </div>
           </div>
           <FieldLabel>שם</FieldLabel>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="למשל: נועה" autoFocus aria-label="שם"
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={`למשל: ${SUGGESTED_MEMBER_NAME}`} autoFocus aria-label="שם"
             onKeyDown={(e) => { if (e.key === "Enter") create(); }} style={{ ...inputStyle, width: "100%" }} />
           <div style={{ height: 12 }} />
           <FieldLabel>תפקיד (לא חובה)</FieldLabel>

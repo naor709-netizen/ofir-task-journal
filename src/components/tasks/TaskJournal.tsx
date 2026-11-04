@@ -17,7 +17,7 @@ import {
 } from "@/lib/tasks";
 import { pushPermission, isSubscribed, showLocalNotification, syncPushSubscription } from "@/lib/push";
 import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta, markManagerDevice } from "@/lib/team";
-import { MANAGER_ID, MANAGER_NAME, type PersonColor } from "@/lib/journals";
+import { MANAGER_ID, MANAGER_NAME, firstName, type PersonColor } from "@/lib/journals";
 import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
 import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, primaryBtn } from "./ui";
@@ -1259,7 +1259,7 @@ function Hero({
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <h2 style={{ margin: 0, fontSize: 27, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-                  {greet}, {personName}
+                  {greet}, {firstName(personName)}
                 </h2>
                 {streak >= 2 && (
                   <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{

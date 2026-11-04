@@ -6,6 +6,15 @@
 export const MANAGER_ID = "ofir";
 export const MANAGER_NAME = "אופיר";
 
+// העובדת של אופיר — מוצעת מראש בהוספה לצוות (השם ניתן לעריכה, ושום דבר לא נוצר
+// אוטומטית: היומן שלה נפתח רק כשאופיר לוחץ "יצירת היומן", אחרי הגדרת קוד המנהל)
+export const SUGGESTED_MEMBER_NAME = "נדין מזרחי";
+
+// שם פרטי לברכות ("בוקר טוב, נדין") — שם מלא נשאר בכותרות ובדשבורד
+export function firstName(name: string): string {
+  return String(name ?? "").trim().split(/\s+/)[0] || name;
+}
+
 export type PersonColor = "blue" | "violet" | "teal" | "rose" | "orange" | "fuchsia";
 
 // גוון אישי לכל יומן: הכרום (כפתור ראשי, טאב פעיל, הילת רקע) נצבע בו.

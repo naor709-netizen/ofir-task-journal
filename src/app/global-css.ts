@@ -1,5 +1,14 @@
-/* הפונטים נטענים א-סינכרונית מ-layout.tsx — @import כאן חסם את ציור הדף עד שגוגל עונה */
+// ============================================
+// העיצוב הגלובלי של היומן — משובץ ישירות בתוך ה-HTML (תגית <style> ב-layout),
+// ולא כקובץ CSS נפרד.
+//
+// למה: אצל אופיר (Chrome באנדרואיד, נפתח מקישור בוואטסאפ) קובץ ה-CSS הנפרד לא
+// נטען, והיומן הוצג "ריק" — בלי רקע, בלי כרטיסים, כפתור "משימה חדשה" שקוף.
+// כשהעיצוב חלק מהדף עצמו הוא מגיע תמיד יחד איתו (וגם חוסך בקשה ברשת).
+// ~9KB — זניח.
+// ============================================
 
+export const GLOBAL_CSS = `
 :root {
   --font: 'Heebo', system-ui, sans-serif;
   --font-display: 'Rubik', 'Heebo', system-ui, sans-serif;
@@ -269,3 +278,4 @@ input::placeholder, textarea::placeholder { color: var(--tj-ink3); opacity: 1; }
   .tj-check-draw { animation: none; stroke-dashoffset: 0; }
   .tj-ring-arc, .tj-tabpill { transition: none !important; }
 }
+`;

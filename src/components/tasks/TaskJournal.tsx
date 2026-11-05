@@ -811,8 +811,8 @@ export default function TaskJournal({ journalId, personName, personColor }: {
               />
 
               {/* מדדים לחיצים — כל מדד הוא גם מסנן */}
-              <div className="tj-kpis tj-card" style={{
-                ...card, padding: 6, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4,
+              <div className="tj-kpis" style={{
+                display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10,
               }}>
                 <StatCell label="משימות פתוחות" value={openCount} icon={Ic.layers(16)}
                   active={statusFilter === "active"} onClick={() => setStatusFilter(statusFilter === "active" ? "all" : "active")} />
@@ -1026,7 +1026,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
           .tj-toolbar { padding: 6px !important; margin: 8px 8px 0 !important; top: 6px !important; border-radius: 20px !important; }
           .tj-layout { padding: 10px 10px 40px !important; gap: 10px !important; }
           .tj-card { padding: 13px !important; }
-          .tj-kpis { grid-template-columns: repeat(2,1fr) !important; padding: 5px !important; }
+          .tj-kpis { grid-template-columns: repeat(2,1fr) !important; gap: 8px !important; }
           .tj-calday { min-height: 52px !important; padding: 3px 3px !important; }
           .tj-calday button { font-size: 8.5px !important; padding: 1px 3px !important; }
         }
@@ -1048,11 +1048,12 @@ const sectionH2: React.CSSProperties = {
 };
 
 function HeadIcon({ icon, tone }: { icon: React.ReactNode; tone?: "danger" | "mint" }) {
-  const c = tone === "danger" ? T.danger : tone === "mint" ? T.mint : T.accent;
-  const bg = tone === "danger" ? T.dangerSoft : tone === "mint" ? T.mintSoft : T.accentSoft;
+  const c = tone === "danger" ? "var(--tj-danger)" : tone === "mint" ? "var(--tj-mint)" : "var(--tj-accent)";
   return (
     <span style={{
-      width: 30, height: 30, borderRadius: 10, flexShrink: 0, background: bg, color: c,
+      width: 32, height: 32, borderRadius: 11, flexShrink: 0, color: "#fff",
+      background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 68%, #000))`,
+      boxShadow: `0 8px 18px -10px ${alpha(c, 90)}`,
       display: "inline-flex", alignItems: "center", justifyContent: "center",
     }}>{icon}</span>
   );
@@ -1198,12 +1199,13 @@ function ViewTabs({ views, view, onChange }: {
             onClick={(e) => { onChange(v.key); e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" }); }}
             style={{
             position: "relative", display: "inline-flex", alignItems: "center", gap: 7,
-            background: "transparent", color: active ? T.ink : T.ink2,
+            background: "transparent", color: active ? "#fff" : T.ink2,
             border: "none", borderRadius: 10, padding: "8px 13px",
             fontSize: 13, fontWeight: active ? 700 : 500, cursor: "pointer",
             whiteSpace: "nowrap", fontFamily: "inherit",
+            transition: "color .3s var(--ease-out)",
           }}>
-            <span style={{ color: active ? T.accent : T.ink3, display: "inline-flex" }}>{v.icon(15)}</span>
+            <span style={{ color: active ? "#fff" : T.ink3, display: "inline-flex", transition: "color .3s var(--ease-out)" }}>{v.icon(15)}</span>
             {v.label}
           </button>
         );
@@ -1212,7 +1214,35 @@ function ViewTabs({ views, view, onChange }: {
   );
 }
 
-// ---- ה-hero: ברכה, ציר היום, הוספה מהירה עם הבנה חיה, וטבעת היום ----
+// ---- ה-hero: "שמיים" שמשתנים לפי שעת היום — זריחה, שמיים כחולים, שקיעה, לילה ----
+// הטקסט יושב בצד ימין (RTL), ולכן כל רמפה כהה בימין ומתבהרת שמאלה.
+type Sky = { name: string; bg: string; orb: string; orbGlow: string; stars: boolean; ring: string };
+
+function skyFor(h: number): Sky {
+  if (h >= 5 && h < 10) return {
+    name: "זריחה",
+    bg: "linear-gradient(245deg, #172F73 0%, #3C4FA8 34%, #D9775E 72%, #F4BE7E 100%)",
+    orb: "#FFE6B0", orbGlow: "rgba(255,196,120,0.55)", stars: false, ring: "#FFE6B0",
+  };
+  if (h >= 10 && h < 16) return {
+    name: "צהריים",
+    bg: "linear-gradient(245deg, #12348F 0%, #1D4ED8 38%, #2F8FEA 74%, #6CC4F5 100%)",
+    orb: "#FFF6CF", orbGlow: "rgba(255,240,180,0.55)", stars: false, ring: "#A7F3D0",
+  };
+  if (h >= 16 && h < 20) return {
+    name: "שקיעה",
+    bg: "linear-gradient(245deg, #101B4A 0%, #3A2F7A 30%, #B24A6E 66%, #F29245 100%)",
+    orb: "#FFD08A", orbGlow: "rgba(255,150,90,0.55)", stars: false, ring: "#FFD08A",
+  };
+  return {
+    name: "לילה",
+    bg: "linear-gradient(245deg, #040A1C 0%, #0A1638 45%, #16307A 100%)",
+    orb: "#E8EEFF", orbGlow: "rgba(180,200,255,0.35)", stars: true, ring: "#A7F3D0",
+  };
+}
+
+const W = (a: number) => `rgba(255,255,255,${a})`;
+
 function Hero({
   personName, today, todayKey, allFlat, nowTick, streak, overdueCount, criticalCount,
   quickText, setQuickText, quickPreview, onQuickAdd, onShare, onOpenTask,
@@ -1233,8 +1263,8 @@ function Hero({
   onOpenTask: (id: string) => void;
 }) {
   const h = today.getHours();
+  const sky = skyFor(h);
   const greet = h < 5 ? "לילה טוב" : h < 12 ? "בוקר טוב" : h < 17 ? "צהריים טובים" : h < 22 ? "ערב טוב" : "לילה טוב";
-  const dayIcon = h < 5 || h >= 21 ? Ic.moon(20) : h < 11 ? Ic.sunrise(20) : h < 17 ? Ic.sun(20) : Ic.sunset(20);
   const todays = allFlat.filter((t) => t.dueDate === todayKey);
   const todayDone = todays.filter(isDone).length;
   const todayOpen = todays.length - todayDone;
@@ -1245,6 +1275,14 @@ function Hero({
   if (overdueCount > 0) bits.push(`${overdueCount} באיחור`);
   if (criticalCount > 0) bits.push(`${criticalCount} קריטיות`);
   const heb = hebrewDateToday(today);
+
+  // מיקום השמש/הירח על קשת השמיים לפי השעה (ימין = בוקר, שמאל = ערב)
+  const hours = today.getHours() + today.getMinutes() / 60;
+  const dayT = Math.max(0, Math.min(1, (hours - 5) / 15)); // 05:00→20:00
+  const nightT = ((hours + 24 - 20) % 24) / 9; // 20:00→05:00
+  const t = sky.stars ? Math.min(1, nightT) : dayT;
+  const orbX = 8 + t * 72; // אחוז מימין
+  const orbY = 62 - Math.sin(t * Math.PI) * 48; // אחוז מלמעלה
 
   const previewChips: string[] = [];
   if (quickPreview) {
@@ -1257,60 +1295,75 @@ function Hero({
   }
 
   return (
-    <section className="tj-card tj-hero" style={{
-      ...card, padding: "18px 20px", overflow: "hidden",
-      background: `radial-gradient(120% 140% at 100% 0%, ${T.accentSoft}, transparent 55%), ${T.surface}`,
+    <section className="tj-card tj-hero" aria-label={`סקירת היום — ${sky.name}`} style={{
+      position: "relative", borderRadius: 26, padding: "22px 22px 18px", overflow: "hidden", color: "#fff",
+      background: sky.bg,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22), 0 30px 60px -34px rgba(10,20,60,0.75)",
     }}>
-      <div className="tj-hero-grid" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 18, alignItems: "start" }}>
+      {/* שכבות השמיים: כוכבים, שמש/ירח, אובך אופק */}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
+        {sky.stars && <div className="tj-stars" />}
+        <div className="tj-orb" style={{
+          position: "absolute", right: `${orbX}%`, top: `${orbY}%`, width: 190, height: 190, marginRight: -95, marginTop: -95,
+          borderRadius: "50%",
+          background: `radial-gradient(circle, ${sky.orb} 0 18%, ${sky.orbGlow} 32%, transparent 68%)`,
+          filter: "blur(1px)",
+        }} />
+        <div style={{ position: "absolute", insetInline: 0, bottom: 0, height: "45%", background: "linear-gradient(0deg, rgba(4,10,30,0.35), transparent)" }} />
+        <div style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: "70%", background: "linear-gradient(270deg, rgba(4,10,30,0.28), transparent)" }} />
+      </div>
+
+      <div className="tj-hero-grid" style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "1fr auto", gap: 18, alignItems: "start" }}>
         <div style={{ minWidth: 0 }}>
-          <div className="tj-hero-head" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <span style={{
-              width: 42, height: 42, borderRadius: 14, flexShrink: 0, color: T.accent, background: T.accentSoft,
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-            }}>{dayIcon}</span>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 style={{ margin: 0, fontSize: 27, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-                  {greet}, {firstName(personName)}
-                </h2>
-                {streak >= 2 && (
-                  <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    fontSize: 11.5, fontWeight: 700, color: T.amber, background: T.amberSoft,
-                    borderRadius: 99, padding: "3px 10px 3px 9px",
-                  }}>
-                    {Ic.flame(12)} רצף {streak} ימים
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 4 }}>
-                יום {HE_WEEKDAYS_FULL[today.getDay()]}, <span className="num">{today.getDate()}.{today.getMonth() + 1}</span>
-                {heb ? <> · {heb}</> : null}
-                {" · "}
-                {bits.length ? bits.join(" · ") : "אין משימות להיום — יום נקי"}
-              </div>
-            </div>
+          <div className="tj-hero-head" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0, fontSize: 32, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.035em", lineHeight: 1.05, textShadow: "0 2px 18px rgba(0,0,0,0.25)" }}>
+              {greet}, {firstName(personName)}
+            </h2>
+            {streak >= 2 && (
+              <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                fontSize: 12, fontWeight: 700, color: "#fff", background: W(0.16),
+                border: `1px solid ${W(0.28)}`, borderRadius: 99, padding: "3px 11px 3px 9px",
+                backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+              }}>
+                {Ic.flame(12)} רצף {streak} ימים
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 13.5, color: W(0.86), marginTop: 6 }}>
+            יום {HE_WEEKDAYS_FULL[today.getDay()]}, <span className="num">{today.getDate()}.{today.getMonth() + 1}</span>
+            {heb ? <> · {heb}</> : null}
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#fff", marginTop: 2 }}>
+            {bits.length ? bits.join(" · ") : "אין משימות להיום — יום נקי"}
           </div>
 
           <DayTimeline allFlat={allFlat} todayKey={todayKey} nowTick={nowTick} onOpenTask={onOpenTask} />
 
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
             <div style={{ position: "relative", flex: 1 }}>
-              <span style={{ position: "absolute", insetInlineStart: 12, top: "50%", transform: "translateY(-50%)", color: T.accent, pointerEvents: "none" }}>
+              <span style={{ position: "absolute", insetInlineStart: 12, top: "50%", transform: "translateY(-50%)", color: "#fff", pointerEvents: "none" }}>
                 {Ic.sparkle(15)}
               </span>
               <input
+                className="tj-hero-input"
                 value={quickText}
                 onChange={(e) => setQuickText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") onQuickAdd(); }}
                 aria-label="הוספה מהירה"
                 placeholder={'נסו: "להתקשר לדני מחר ב-10:00"'}
-                style={{ ...inputStyle, width: "100%", paddingInlineStart: 36, height: 44, borderRadius: 14, background: "var(--tj-input)" }}
+                style={{
+                  ...inputStyle, width: "100%", paddingInlineStart: 36, height: 46, borderRadius: 15,
+                  background: W(0.14), border: `1px solid ${W(0.32)}`, color: "#fff",
+                  backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+                }}
               />
             </div>
             <button onClick={onQuickAdd} disabled={!quickText.trim()} style={{
-              ...primaryBtn, borderRadius: 14, padding: "0 20px", height: 44,
-              ...(quickText.trim() ? {} : { background: T.surface2, color: T.ink3, boxShadow: "none" }),
+              border: "none", borderRadius: 15, padding: "0 20px", height: 46, cursor: quickText.trim() ? "pointer" : "default",
+              fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800,
+              background: quickText.trim() ? "#fff" : W(0.18), color: quickText.trim() ? "#16307A" : W(0.75),
+              boxShadow: quickText.trim() ? "0 10px 24px -12px rgba(0,0,0,0.5)" : "none",
             }}>
               הוספה
             </button>
@@ -1318,21 +1371,23 @@ function Hero({
           <div aria-live="polite" style={{ minHeight: 26, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
             {quickPreview?.title ? (
               <>
-                <span style={{ fontSize: 11, color: T.ink3 }}>הבנתי:</span>
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 11.5, color: W(0.78) }}>הבנתי:</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {quickPreview.title}
                 </span>
                 {previewChips.map((c) => (
                   <span key={c} className="tj-pop" style={{
-                    fontSize: 11, fontWeight: 600, borderRadius: 99, padding: "2px 9px",
-                    color: c === "קריטית" ? T.danger : T.accent, background: c === "קריטית" ? T.dangerSoft : T.accentSoft,
+                    fontSize: 11.5, fontWeight: 700, borderRadius: 99, padding: "2px 10px",
+                    color: c === "קריטית" ? "#FFE4E6" : "#fff",
+                    background: c === "קריטית" ? "rgba(244,63,94,0.45)" : W(0.2),
+                    border: `1px solid ${W(0.25)}`,
                   }}>{c}</span>
                 ))}
               </>
             ) : (
               <button onClick={onShare} style={{
                 display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0,
-                color: T.ink3, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                color: W(0.82), fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
               }}>
                 {Ic.share(12)} שיתוף סיכום היום בוואטסאפ
               </button>
@@ -1342,44 +1397,61 @@ function Hero({
 
         {/* טבעת היום: כמה מהמשימות של היום כבר נסגרו */}
         <div className="tj-hero-ring" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, paddingTop: 2 }}>
-          <ProgressRing
-            value={todays.length ? todayDone / todays.length : pctAll / 100}
-            size={108} stroke={9} color={T.mint}
-            label={todays.length ? `${todayDone} מתוך ${todays.length} משימות היום הושלמו` : `התקדמות כוללת ${pctAll}%`}
-          >
-            {todays.length ? (
-              <>
-                <span className="num" style={{ fontSize: 24, fontWeight: 800, lineHeight: 1, color: T.ink }}>
-                  {todayDone}<span style={{ color: T.ink3, fontSize: 15 }}>/{todays.length}</span>
-                </span>
-                <span style={{ fontSize: 10.5, color: T.ink3, marginTop: 3 }}>היום</span>
-              </>
-            ) : (
-              <>
-                <span className="num" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: T.ink }}>{pctAll}%</span>
-                <span style={{ fontSize: 10.5, color: T.ink3, marginTop: 3 }}>הושלם</span>
-              </>
-            )}
-          </ProgressRing>
-          <span className="num" style={{ fontSize: 10.5, color: T.ink3 }}>
-            התקדמות כוללת <b style={{ color: T.mint }}>{pctAll}%</b>
+          <div style={{ borderRadius: "50%", background: W(0.1), padding: 8, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", border: `1px solid ${W(0.2)}` }}>
+            <ProgressRing
+              value={todays.length ? todayDone / todays.length : pctAll / 100}
+              size={112} stroke={9} color={sky.ring} track={W(0.2)}
+              label={todays.length ? `${todayDone} מתוך ${todays.length} משימות היום הושלמו` : `התקדמות כוללת ${pctAll}%`}
+            >
+              {todays.length ? (
+                <>
+                  <span className="num" style={{ fontSize: 26, fontWeight: 800, lineHeight: 1, color: "#fff" }}>
+                    {todayDone}<span style={{ color: W(0.65), fontSize: 16 }}>/{todays.length}</span>
+                  </span>
+                  <span style={{ fontSize: 11, color: W(0.8), marginTop: 3 }}>היום</span>
+                </>
+              ) : (
+                <>
+                  <span className="num" style={{ fontSize: 24, fontWeight: 800, lineHeight: 1, color: "#fff" }}>{pctAll}%</span>
+                  <span style={{ fontSize: 11, color: W(0.8), marginTop: 3 }}>הושלם</span>
+                </>
+              )}
+            </ProgressRing>
+          </div>
+          <span className="num" style={{ fontSize: 11, color: W(0.82) }}>
+            התקדמות כוללת <b style={{ color: "#fff" }}>{pctAll}%</b>
           </span>
         </div>
       </div>
       <style>{`
+        .tj-hero-input::placeholder { color: rgba(255,255,255,0.72) !important; }
+        .tj-hero-input:focus { border-color: rgba(255,255,255,0.7) !important; background: rgba(255,255,255,0.2) !important; }
+        .tj-stars { position: absolute; inset: 0; opacity: 0.9;
+          background-image:
+            radial-gradient(1.2px 1.2px at 12% 22%, #fff 99%, transparent), radial-gradient(1px 1px at 28% 64%, #fff 99%, transparent),
+            radial-gradient(1.4px 1.4px at 44% 18%, #fff 99%, transparent), radial-gradient(1px 1px at 58% 42%, #fff 99%, transparent),
+            radial-gradient(1.2px 1.2px at 71% 12%, #fff 99%, transparent), radial-gradient(1px 1px at 84% 56%, #fff 99%, transparent),
+            radial-gradient(1.3px 1.3px at 92% 28%, #fff 99%, transparent), radial-gradient(1px 1px at 36% 84%, #fff 99%, transparent),
+            radial-gradient(1px 1px at 66% 78%, #fff 99%, transparent), radial-gradient(1.2px 1.2px at 6% 70%, #fff 99%, transparent);
+          animation: tj-twinkle 6s ease-in-out infinite alternate; }
+        @keyframes tj-twinkle { from { opacity: 0.55; } to { opacity: 0.95; } }
+        .tj-orb { animation: tj-orb-breathe 9s ease-in-out infinite alternate; }
+        @keyframes tj-orb-breathe { from { transform: scale(0.94); opacity: 0.9; } to { transform: scale(1.06); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .tj-stars, .tj-orb { animation: none !important; } }
         @media (max-width: 640px) {
+          .tj-card.tj-hero { padding: 18px 16px 14px !important; border-radius: 22px !important; }
           .tj-hero-grid { grid-template-columns: 1fr !important; }
-          .tj-hero-ring { position: absolute; top: 12px; inset-inline-end: 12px; transform: scale(0.6); transform-origin: top left; }
+          .tj-hero-ring { position: absolute; top: 0; inset-inline-end: 0; transform: scale(0.58); transform-origin: top left; }
           .tj-hero-ring > span { display: none; }
-          .tj-hero-head { padding-inline-end: 66px; align-items: flex-start !important; }
-          .tj-hero h2 { font-size: 22px !important; }
+          .tj-hero-head { padding-inline-end: 72px; }
+          .tj-hero h2 { font-size: 25px !important; }
         }
       `}</style>
     </section>
   );
 }
 
-// ציר היום: התזכורות של היום על פני השעות, עם סמן "עכשיו" חי
+// ציר היום: התזכורות של היום על פני השעות, עם סמן "עכשיו" חי — בגווני לבן על השמיים
 function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
   allFlat: Task[]; todayKey: string; nowTick: number; onOpenTask: (id: string) => void;
 }) {
@@ -1397,32 +1469,31 @@ function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
   const nowPos = now ? pos(now) : null;
   const ticks = [6, 9, 12, 15, 18, 21, 24];
   return (
-    <div style={{ marginTop: 16 }} aria-label="ציר היום">
+    <div style={{ marginTop: 18 }} aria-label="ציר היום">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: T.ink2 }}>היום שלך</span>
-        <span style={{ fontSize: 10.5, color: T.ink3 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: "#fff" }}>היום שלך</span>
+        <span style={{ fontSize: 11, color: W(0.78) }}>
           {items.length ? `${items.length} ${items.length === 1 ? "תזכורת" : "תזכורות"} היום` : "אין תזכורות מתוזמנות להיום"}
         </span>
       </div>
       <div style={{ position: "relative", height: 30 }}>
-        <div style={{ position: "absolute", insetInline: 0, top: 13, height: 4, borderRadius: 99, background: T.surface2 }} />
+        <div style={{ position: "absolute", insetInline: 0, top: 13, height: 4, borderRadius: 99, background: W(0.22) }} />
         {nowPos !== null && (
           <div style={{
             position: "absolute", insetInlineStart: 0, top: 13, height: 4, borderRadius: 99,
-            width: `${nowPos * 100}%`, background: `linear-gradient(90deg, ${alpha(T.accent, 15)}, ${alpha(T.accent, 55)})`,
-            transform: "scaleX(-1)", transformOrigin: "center",
+            width: `${nowPos * 100}%`, background: `linear-gradient(270deg, ${W(0.35)}, ${W(0.95)})`,
           }} />
         )}
         {ticks.map((h) => (
           <span key={h} style={{
-            position: "absolute", top: 11, width: 1, height: 8, background: T.lineStrong,
+            position: "absolute", top: 11, width: 1, height: 8, background: W(0.35),
             insetInlineStart: `${((h - START) / (END - START)) * 100}%`,
           }} />
         ))}
         {items.map(({ t, r, d }) => {
           const past = now ? d.getTime() < now.getTime() : false;
           const done = isDone(t);
-          const c = t.critical ? T.danger : done ? T.mint : T.accent;
+          const ring = t.critical ? "#FDA4AF" : done ? "#A7F3D0" : "#fff";
           return (
             <button key={r.id} onClick={() => onOpenTask(t.id)}
               title={`${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })} · ${r.note || t.title}`}
@@ -1433,8 +1504,8 @@ function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
                 cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
               }}>
               <span style={{
-                width: 12, height: 12, borderRadius: 99, background: past || done ? T.surface : c,
-                boxShadow: `0 0 0 2.5px ${c}, 0 0 0 5px ${T.surface}`,
+                width: 12, height: 12, borderRadius: 99, background: past || done ? "transparent" : ring,
+                boxShadow: `0 0 0 2.5px ${ring}, 0 0 12px 2px ${W(0.45)}`,
               }} />
             </button>
           );
@@ -1442,15 +1513,15 @@ function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
         {nowPos !== null && now && now.getHours() >= START && (
           <span className="tj-live" title="עכשיו" style={{
             position: "absolute", top: 10, insetInlineStart: `calc(${nowPos * 100}% - 5px)`,
-            width: 10, height: 10, borderRadius: 99, background: T.accent, color: T.accent,
-            boxShadow: `0 0 0 3px ${T.surface}`,
+            width: 10, height: 10, borderRadius: 99, background: "#fff", color: "#fff",
+            boxShadow: `0 0 0 3px ${W(0.35)}`,
           }} />
         )}
       </div>
       <div style={{ position: "relative", height: 14 }}>
         {ticks.map((h) => (
           <span key={h} className="num" style={{
-            position: "absolute", fontSize: 9.5, color: T.ink3,
+            position: "absolute", fontSize: 10, color: W(0.75),
             insetInlineStart: `${((h - START) / (END - START)) * 100}%`, transform: "translateX(50%)",
           }}>{h === 24 ? "00" : String(h).padStart(2, "0")}</span>
         ))}
@@ -1462,22 +1533,26 @@ function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
 function StatCell({ label, value, icon, tone, active, onClick }: {
   label: string; value: number; icon: React.ReactNode; tone?: "danger" | "amber"; active: boolean; onClick: () => void;
 }) {
-  const c = tone === "danger" ? T.danger : tone === "amber" ? T.amber : T.accent;
-  const bg = tone === "danger" ? T.dangerSoft : tone === "amber" ? T.amberSoft : T.accentSoft;
+  // לכל מדד גוון משלו; אדום רק כשיש באמת בעיה
+  const c = tone === "danger" ? "var(--tj-danger)" : tone === "amber" ? "var(--tj-amber)" : "var(--tj-accent)";
   return (
-    <button onClick={onClick} aria-pressed={active} title={active ? "לחיצה מבטלת את הסינון" : `סינון: ${label}`} style={{
-      display: "flex", alignItems: "center", gap: 12, textAlign: "start", padding: "12px 14px",
-      borderRadius: 15, border: "none", cursor: "pointer", fontFamily: "inherit",
-      background: active ? bg : "transparent",
-      boxShadow: active ? `inset 0 0 0 1px ${alpha(c, 35)}` : "none",
+    <button onClick={onClick} aria-pressed={active} title={active ? "לחיצה מבטלת את הסינון" : `סינון: ${label}`} className="tj-stat" style={{
+      position: "relative", overflow: "hidden",
+      display: "flex", alignItems: "center", gap: 12, textAlign: "start", padding: "14px 15px",
+      borderRadius: 18, cursor: "pointer", fontFamily: "inherit",
+      border: `1px solid ${active ? alpha(c, 55) : alpha(c, 18)}`,
+      background: `linear-gradient(150deg, ${alpha(c, active ? 20 : 12)} 0%, ${alpha(c, active ? 8 : 3)} 70%), var(--tj-surface)`,
+      boxShadow: active ? `0 12px 26px -16px ${alpha(c, 80)}` : "inset 0 1px 0 var(--tj-bezel)",
     }}>
       <span style={{
-        width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: bg, color: c,
+        width: 42, height: 42, borderRadius: 13, flexShrink: 0, color: "#fff",
+        background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 70%, #000))`,
+        boxShadow: `0 10px 20px -10px ${alpha(c, 90)}`,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
       }}>{icon}</span>
       <span style={{ minWidth: 0 }}>
-        <span className="num tj-kpi-num" style={{ display: "block", fontSize: 24, fontWeight: 800, lineHeight: 1.05, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
-        <span style={{ display: "block", fontSize: 11.5, color: T.ink2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        <span className="num tj-kpi-num" style={{ display: "block", fontSize: 28, fontWeight: 800, lineHeight: 1, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
+        <span style={{ display: "block", fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
       </span>
     </button>
   );
@@ -1523,10 +1598,22 @@ function NavBtn({ children, onClick, label }: { children: React.ReactNode; onCli
 function Empty({ filtersActive, onCreate }: { filtersActive: boolean; onCreate: () => void }) {
   return (
     <div style={{ textAlign: "center", padding: "40px 20px", color: T.ink3 }}>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12, color: T.accent }}>
-        <span style={{ width: 60, height: 60, borderRadius: 20, background: T.accentSoft, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-          {Ic.layers(28)}
-        </span>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} aria-hidden="true">
+        {/* איור: ערימת כרטיסי משימה, העליון מסומן כבוצע */}
+        <svg width="150" height="104" viewBox="0 0 150 104" fill="none">
+          <ellipse cx="75" cy="96" rx="52" ry="6" fill="var(--tj-accent)" opacity="0.12" />
+          <rect x="30" y="30" width="96" height="52" rx="12" fill="var(--tj-surface2)" transform="rotate(-6 78 56)" />
+          <rect x="24" y="22" width="100" height="56" rx="13" fill="var(--tj-surface)" stroke="var(--tj-line-strong)" transform="rotate(4 74 50)" />
+          <g transform="rotate(-2 75 46)">
+            <rect x="20" y="16" width="110" height="60" rx="14" fill="var(--tj-surface)" stroke="var(--tj-accent)" strokeOpacity="0.45" />
+            <circle cx="112" cy="46" r="11" fill="var(--tj-mint)" />
+            <path d="m107 46 3.5 3.5L117 43" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+            <rect x="36" y="36" width="58" height="7" rx="3.5" fill="var(--tj-accent)" opacity="0.55" />
+            <rect x="50" y="50" width="44" height="5" rx="2.5" fill="var(--tj-ink3)" opacity="0.4" />
+          </g>
+          <path d="M136 14c.5 3.5 2.3 5.3 5.8 5.8-3.5.5-5.3 2.3-5.8 5.8-.5-3.5-2.3-5.3-5.8-5.8 3.5-.5 5.3-2.3 5.8-5.8Z" fill="var(--tj-amber)" opacity="0.8" />
+          <path d="M14 58c.4 2.6 1.7 3.9 4.3 4.3-2.6.4-3.9 1.7-4.3 4.3-.4-2.6-1.7-3.9-4.3-4.3 2.6-.4 3.9-1.7 4.3-4.3Z" fill="var(--tj-accent)" opacity="0.7" />
+        </svg>
       </div>
       <div style={{ fontSize: 14.5, fontWeight: 600, color: T.ink }}>
         {filtersActive ? "אין משימות שתואמות את הסינון" : "היומן ריק — זה הזמן להתחיל"}

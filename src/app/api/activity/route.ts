@@ -6,7 +6,7 @@ import { isValidJournalId } from "@/lib/journals";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TYPES: ActivityType[] = ["done", "new", "assigned"];
+const TYPES: ActivityType[] = ["done", "new", "assigned", "nudge"];
 
 // נקרא מהיומן אחרי שינוי שנשמר בענן. השרת מאמת כל אירוע מול הנתונים,
 // ולכן גם קריאה מזויפת לא יכולה לשלוח יותר ממה שבאמת קרה ביומן.

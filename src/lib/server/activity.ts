@@ -9,7 +9,7 @@ import { journalRows, findInTree, claimOnce } from "./journal-ops";
 // כל אירוע מאומת מול הנתונים בענן ונשלח פעם אחת בלבד.
 // ============================================================
 
-export type ActivityType = "done" | "new" | "assigned";
+export type ActivityType = "done" | "new" | "assigned" | "nudge";
 
 export async function handleActivity(
   sb: SupabaseClient,
@@ -32,6 +32,9 @@ export async function handleActivity(
   const done: Task[] = [];
   const added: Task[] = [];
   const assigned: Task[] = [];
+  const nudged: Task[] = [];
+  // "בקשת עדכון" מאופיר: לכל היותר פעם בחצי שעה לאותה משימה
+  const bucket = Math.floor(Date.now() / (30 * 60000));
   let skipped = 0;
 
   for (const ev of events.slice(0, 30)) {
@@ -40,10 +43,13 @@ export async function handleActivity(
       !!t && !!t.title?.trim() &&
       (ev.type === "done" ? t.status === "done"
         : ev.type === "assigned" ? t.assignedBy === MANAGER_ID
+        : ev.type === "nudge" ? t.status !== "done"
         : true);
-    if (!valid || !(await claimOnce(sb, `act:${ev.type}:${ev.taskId}`))) { skipped++; continue; }
+    const key = ev.type === "nudge" ? `act:nudge:${ev.taskId}:${bucket}` : `act:${ev.type}:${ev.taskId}`;
+    if (!valid || !(await claimOnce(sb, key))) { skipped++; continue; }
     if (ev.type === "done") done.push(t!);
     else if (ev.type === "new") added.push(t!);
+    else if (ev.type === "nudge") nudged.push(t!);
     else assigned.push(t!);
   }
 
@@ -101,6 +107,32 @@ export async function handleActivity(
             t.description ? `<i>${escHtml(t.description).slice(0, 300)}</i>` : "",
             t.dueDate ? `🎯 יעד: ${formatDue(t.dueDate)}` : "",
             t.critical ? "🔴 קריטית" : "",
+          ].filter(Boolean).join("\n"),
+          buttons: [
+            [{ text: "✓ בוצע", callback_data: `d:${t.id}` }],
+            [{ text: "פתיחת היומן", url: herJournal }],
+          ],
+        },
+      }
+    );
+    sent++;
+  }
+
+  for (const t of nudged) {
+    await notifyJournal(
+      sb, journalId,
+      {
+        title: `📣 ${MANAGER_NAME} מבקש עדכון`,
+        body: `${t.title}${t.dueDate ? ` · יעד ${formatDue(t.dueDate)}` : ""}`,
+        tag: `nudge-${t.id}`,
+        url: journalPath(journalId),
+      },
+      {
+        telegram: {
+          html: [
+            `<b>📣 ${MANAGER_NAME} מבקש עדכון</b>`,
+            escHtml(t.title),
+            t.dueDate ? `🎯 יעד: ${formatDue(t.dueDate)}` : "",
           ].filter(Boolean).join("\n"),
           buttons: [
             [{ text: "✓ בוצע", callback_data: `d:${t.id}` }],

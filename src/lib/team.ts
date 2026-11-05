@@ -545,3 +545,21 @@ export function addJournalCategory(journalId: string, name: string, color: strin
   }
   return cat;
 }
+
+// "בקשת עדכון" — אופיר מבקש מאיש הצוות לעדכן משימה; קופצת לו/ה התראה בטלפון.
+// השרת מאמת שהמשימה קיימת ופתוחה, ומגביל לפעם בחצי שעה לכל משימה.
+export async function nudgeTask(journalId: string, taskId: string): Promise<"sent" | "limited" | "failed" | "local"> {
+  if (!hasCloud) return "local";
+  try {
+    const res = await fetch("/api/activity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ journalId, events: [{ type: "nudge", taskId }] }),
+    });
+    const j = (await res.json().catch(() => ({}))) as { sent?: number };
+    if (!res.ok) return "failed";
+    return (j.sent ?? 0) > 0 ? "sent" : "limited";
+  } catch {
+    return "failed";
+  }
+}

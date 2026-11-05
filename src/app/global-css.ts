@@ -132,7 +132,7 @@ body {
 }
 .tj-aurora i {
   position: absolute; display: block; border-radius: 50%;
-  filter: blur(72px); opacity: 0.5; will-change: transform;
+  filter: blur(64px); opacity: 0.78; will-change: transform;
 }
 .tj-aurora i:nth-child(1) {
   width: 62vmax; height: 46vmax; top: -24vmax; inset-inline-start: -14vmax;
@@ -149,7 +149,7 @@ body {
   background: radial-gradient(closest-side, color-mix(in srgb, var(--tj-aurora-2) 16%, transparent), transparent);
   animation: tj-drift-c 52s var(--ease-soft) infinite alternate;
 }
-html[data-theme="dark"] .tj-aurora i { opacity: 0.62; }
+html[data-theme="dark"] .tj-aurora i { opacity: 0.85; }
 @keyframes tj-drift-a { to { transform: translate3d(9vw, 6vh, 0) scale(1.12); } }
 @keyframes tj-drift-b { to { transform: translate3d(-8vw, -7vh, 0) scale(1.08); } }
 @keyframes tj-drift-c { to { transform: translate3d(-14vw, 10vh, 0) scale(1.2); } }
@@ -202,7 +202,7 @@ button:disabled { cursor: default; }
 /* ---- טאב פעיל: גלולה שגולשת בין הטאבים (clip-path — בלי הנפשת רוחב) ---- */
 .tj-tabpill {
   position: absolute; top: 3px; bottom: 3px; right: 0; pointer-events: none;
-  background: color-mix(in srgb, var(--tj-accent) 13%, var(--tj-surface));
+  background: var(--tj-grad);
   transition: clip-path .42s var(--ease-out);
 }
 

@@ -10,7 +10,7 @@ import {
   subscribeTeamMeta, getTeamMeta, getServerTeamMeta,
   subscribeTeamData, getTeamData, getServerTeamData, initTeamData, refetchTeamData,
   addMember, updateMember, removeMember, assignTask, upsertJournalRoot, deleteJournalRoot, patchJournalTask,
-  addJournalCategory, savePrefs, setManagerPin, lockManager, lockOnOpenEnabled, setLockOnOpen,
+  addJournalCategory, savePrefs, setManagerPin, lockManager, lockOnOpenEnabled, setLockOnOpen, nudgeTask,
   type JournalSlice,
 } from "@/lib/team";
 import {
@@ -223,16 +223,28 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
   return (
     <>
       {/* ===== כותרת הצוות ===== */}
-      <section className="tj-card" style={{
-        ...card, padding: "18px 20px", overflow: "hidden",
-        background: `radial-gradient(110% 150% at 100% 0%, ${T.accentSoft}, transparent 55%), ${T.surface}`,
+      <section className="tj-card tj-team-banner" style={{
+        position: "relative", borderRadius: 26, padding: "22px 22px 18px", overflow: "hidden", color: "#fff",
+        background: "linear-gradient(245deg, #0B1640 0%, #16307A 45%, #2563EB 100%)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 30px 60px -34px rgba(10,20,60,0.75)",
       }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+        <div aria-hidden="true" style={{
+          position: "absolute", inset: 0, pointerEvents: "none",
+          background: "radial-gradient(260px 160px at 8% 0%, rgba(125,211,252,0.35), transparent 70%), radial-gradient(240px 200px at 100% 100%, rgba(20,184,166,0.28), transparent 70%)",
+        }} />
+        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <h2 style={{ margin: 0, fontSize: 27, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
+            <div style={{ display: "flex", marginBottom: 10 }} aria-hidden="true">
+              {people.slice(0, 6).map((p, i) => (
+                <span key={p.id} style={{ marginInlineStart: i ? -10 : 0, borderRadius: 99, boxShadow: "0 0 0 3px #16307A", display: "inline-flex" }}>
+                  <Avatar name={p.name} color={p.color} size={34} />
+                </span>
+              ))}
+            </div>
+            <h2 style={{ margin: 0, fontSize: 30, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.035em", lineHeight: 1.08, textShadow: "0 2px 18px rgba(0,0,0,0.25)" }}>
               הצוות של {MANAGER_NAME}
             </h2>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
+            <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "rgba(255,255,255,0.86)", lineHeight: 1.6 }}>
               {noMembers
                 ? "לכל איש צוות יומן מלא משלו. כאן רואים את כולם במבט אחד ומקבלים עדכון לטלפון."
                 : `${members.length} ${members.length === 1 ? "איש צוות" : "אנשי צוות"} · ${teamToday} משימות להיום · ${teamDoneWeek} הושלמו השבוע`}
@@ -240,18 +252,23 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {!noMembers && (
-              <button onClick={() => setAssignTo(members[0]?.id ?? null)} style={{ ...primaryBtn, height: 42 }}>
+              <button onClick={() => setAssignTo(members[0]?.id ?? null)} style={{
+                ...primaryBtn, height: 42, background: "#fff", color: "#16307A", boxShadow: "0 12px 26px -14px rgba(0,0,0,0.6)",
+              }}>
                 {Ic.send(14)} הקצאת משימה
               </button>
             )}
-            <button onClick={() => setAdding(true)} style={{ ...(noMembers ? primaryBtn : softBtn), height: 42, padding: "0 16px", fontSize: 13 }}>
+            <button onClick={() => setAdding(true)} style={{
+              ...ghostBtn, height: 42, padding: "0 16px", fontSize: 13, color: "#fff",
+              border: "1px solid rgba(255,255,255,0.35)", background: noMembers ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)",
+            }}>
               {Ic.userPlus(15)} הוספה לצוות
             </button>
           </div>
         </div>
 
         {!noMembers && (
-          <div className="tj-team-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginTop: 16 }}>
+          <div className="tj-team-kpis" style={{ position: "relative", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginTop: 18 }}>
             <MiniStat label="פתוחות בצוות" value={teamOpen} icon={Ic.layers(15)} />
             <MiniStat label="להיום" value={teamToday} icon={Ic.target(15)} />
             <MiniStat label="הושלמו השבוע" value={teamDoneWeek} icon={Ic.checkCircle(15)} tone="mint" />
@@ -290,6 +307,17 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
               onOpen={(taskId) => openTask(tasksOf, taskId)}
               onStatus={(t, st) => setMemberStatus(tasksOf, t, st)}
               onDelete={(root) => deleteMemberTask(tasksOf, root)}
+              onNudge={async (t) => {
+                const name = firstWord(people.find((x) => x.id === tasksOf)?.name ?? "");
+                const r = await nudgeTask(tasksOf, t.id);
+                toast(
+                  r === "sent" ? `נשלחה ל${name} בקשה לעדכון על "${t.title}"`
+                    : r === "limited" ? "כבר נשלחה בקשה על המשימה הזו בחצי השעה האחרונה"
+                    : r === "local" ? "בקשת עדכון עובדת רק כשהיומן מחובר לענן"
+                    : "השליחה נכשלה — בדקו חיבור",
+                  r === "sent" ? "success" : r === "limited" ? "info" : "error"
+                );
+              }}
               onAssign={() => setAssignTo(tasksOf)}
             />
           )}
@@ -393,6 +421,38 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
                 )}
               </section>
 
+              {/* ---- ניהול הצוות: מי בצוות, עריכה, קישור, הסרה ---- */}
+              <section className="tj-card" style={{ ...card, padding: 16 }}>
+                <Head icon={Ic.users(15)} title="ניהול הצוות" count={members.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {meta.roster.members.map((m) => {
+                    const ch = phoneChannel(m.id);
+                    return (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, background: T.bg2, borderRadius: 14, padding: "10px 12px" }}>
+                        <Avatar name={m.name} color={m.color} size={36} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+                          <div style={{ fontSize: 11, color: T.ink3 }}>
+                            {m.role ? `${m.role} · ` : ""}בצוות מאז {new Date(m.createdAt).toLocaleDateString("he-IL")}
+                            {" · "}<span style={{ color: ch ? T.mint : T.ink3 }}>{ch ? CHANNEL_LABEL[ch] : "בלי התראות"}</span>
+                          </div>
+                        </div>
+                        <IconAction label={`עריכת ${m.name}`} onClick={() => setEditing(m)} color={T.ink2}>{Ic.pencil(13)}</IconAction>
+                        <IconAction label={`הקישור של ${m.name}`} onClick={() => setShareFor(m)} color={T.ink2}>{Ic.link(13)}</IconAction>
+                        <IconAction label={`הסרת ${m.name} מהצוות`} onClick={async () => {
+                          if (!confirm(`להסיר את ${m.name} מהצוות?\n\nהיומן שלו/ה וכל המשימות יימחקו, והקישור יפסיק לעבוד.\nעותק נשמר בגיבוי הלילי.`)) return;
+                          await removeMember(m.id);
+                          toast(`${m.name} הוסר/ה מהצוות`, "info");
+                        }} color={T.danger}>{Ic.trash(13)}</IconAction>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={() => setAdding(true)} style={{ ...softBtn, width: "100%", height: 38, marginTop: 10 }}>
+                  {Ic.userPlus(13)} הוספה לצוות
+                </button>
+              </section>
+
               {/* ---- הגדרות מנהל ---- */}
               <section className="tj-card" style={{ ...card, padding: 16 }}>
                 <Head icon={Ic.sliders(15)} title="עדכונים ופרטיות" />
@@ -490,7 +550,9 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
 
       <style>{`
         @media (max-width: 1100px) { .tj-team-cols { grid-template-columns: 1fr !important; } }
+        .tj-card.tj-flush { padding: 0 !important; }
         @media (max-width: 640px) {
+          .tj-card.tj-flush { padding: 0 !important; }
           .tj-team-kpis { grid-template-columns: repeat(2, 1fr) !important; }
           .tj-people { grid-template-columns: 1fr !important; }
           .tj-lanes { grid-auto-columns: 78% !important; }
@@ -507,7 +569,12 @@ function Head({ icon, title, count, tone }: { icon: React.ReactNode; title: stri
   const bg = tone === "danger" ? T.dangerSoft : tone === "mint" ? T.mintSoft : T.accentSoft;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
-      <span style={{ width: 30, height: 30, borderRadius: 10, background: bg, color: c, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{icon}</span>
+      <span style={{
+        width: 32, height: 32, borderRadius: 11, color: "#fff", flexShrink: 0,
+        background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 68%, #000))`,
+        boxShadow: `0 8px 18px -10px ${alpha(c, 90)}`,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}>{icon}</span>
       <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>{title}</h3>
       {count !== undefined && (
         <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: c, background: bg, borderRadius: 99, padding: "2px 10px" }}>{count}</span>
@@ -525,13 +592,17 @@ function EmptyLine({ icon, text }: { icon: React.ReactNode; text: string }) {
 }
 
 function MiniStat({ label, value, icon, tone }: { label: string; value: number; icon: React.ReactNode; tone?: "danger" | "mint" }) {
-  const c = tone === "danger" ? T.danger : tone === "mint" ? T.mint : T.accent;
+  const c = tone === "danger" ? "#FDA4AF" : tone === "mint" ? "#6EE7B7" : "#BFDBFE";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, background: T.bg2, borderRadius: 15, padding: "10px 12px" }}>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10, borderRadius: 16, padding: "11px 13px",
+      background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)",
+      backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+    }}>
       <span style={{ color: c, display: "inline-flex" }}>{icon}</span>
       <span>
-        <span className="num" style={{ display: "block", fontSize: 21, fontWeight: 800, lineHeight: 1, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
-        <span style={{ display: "block", fontSize: 11, color: T.ink2, marginTop: 2 }}>{label}</span>
+        <span className="num" style={{ display: "block", fontSize: 24, fontWeight: 800, lineHeight: 1, color: tone === "danger" && value ? "#FDA4AF" : "#fff" }}>{value}</span>
+        <span style={{ display: "block", fontSize: 11.5, color: "rgba(255,255,255,0.82)", marginTop: 3 }}>{label}</span>
       </span>
     </div>
   );
@@ -617,34 +688,46 @@ function PersonCard({ p, s, todayKey, channel, onTasks, onAssign, onEdit, onShar
   onTasks: () => void; onAssign: () => void; onEdit: () => void; onShare: () => void;
 }) {
   const tilt = useTilt<HTMLDivElement>(4);
-  const pc = personVar(p.color);
   return (
     <div ref={tilt} className="tj-tilt">
-      <article className="tj-card" style={{
-        ...card, padding: 16, overflow: "hidden",
-        background: `radial-gradient(90% 120% at 100% 0%, ${alpha(pc, 11)}, transparent 60%), ${T.surface}`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Avatar name={p.name} color={p.color} size={46} ring />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {p.name}
-              </h3>
-              {p.isManager && <span style={{ color: pc, display: "inline-flex" }} title="מנהל">{Ic.crown(13)}</span>}
+      <article className="tj-card tj-flush" style={{ ...card, padding: 0, overflow: "hidden" }}>
+        {/* כריכה אישית בגוון של האדם */}
+        <div style={{
+          position: "relative", padding: "16px 16px 14px", color: "#fff",
+          background: `linear-gradient(245deg, ${PERSON_COLORS[p.color].b} 0%, ${PERSON_COLORS[p.color].a} 100%)`,
+        }}>
+          <div aria-hidden="true" style={{
+            position: "absolute", inset: 0, pointerEvents: "none",
+            background: "radial-gradient(120px 120px at 12% 20%, rgba(255,255,255,0.28), transparent 70%), radial-gradient(200px 90px at 90% 120%, rgba(0,0,0,0.22), transparent 70%)",
+          }} />
+          <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ borderRadius: 99, padding: 3, background: "rgba(255,255,255,0.25)", display: "inline-flex" }}>
+              <Avatar name={p.name} color={p.color} size={48} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 10px rgba(0,0,0,0.2)" }}>
+                  {p.name}
+                </h3>
+                {p.isManager && <span style={{ display: "inline-flex" }} title="מנהל">{Ic.crown(14)}</span>}
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.88)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                {p.isManager ? "היומן שלך" : p.role || "איש צוות"}
+                <span>·</span>
+                <span title={channel ? "מקבל/ת התראות לטלפון" : "עוד לא הופעלו התראות לטלפון"} style={{
+                  display: "inline-flex", alignItems: "center", gap: 3, fontWeight: 700,
+                  background: channel ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.18)", borderRadius: 99, padding: "1px 8px",
+                }}>
+                  {Ic.bell(10)} {channel ? CHANNEL_LABEL[channel] : "בלי התראות"}
+                </span>
+              </div>
             </div>
-            <div style={{ fontSize: 11.5, color: T.ink3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              {p.isManager ? "היומן שלך" : p.role || "איש צוות"}
-              <span>·</span>
-              <span title={channel ? "מקבל/ת התראות לטלפון" : "עוד לא הופעלו התראות לטלפון"} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: channel ? T.mint : T.ink3 }}>
-                {Ic.bell(10)} {channel ? CHANNEL_LABEL[channel] : "בלי התראות לטלפון"}
-              </span>
-            </div>
+            <ProgressRing value={s.pct / 100} size={56} stroke={5} color="#fff" track="rgba(255,255,255,0.28)" label={`${s.pct}% מהמשימות הושלמו`}>
+              <span className="num" style={{ fontSize: 13.5, fontWeight: 800, color: "#fff" }}>{s.pct}%</span>
+            </ProgressRing>
           </div>
-          <ProgressRing value={s.pct / 100} size={54} stroke={5} color={pc} label={`${s.pct}% מהמשימות הושלמו`}>
-            <span className="num" style={{ fontSize: 13, fontWeight: 800 }}>{s.pct}%</span>
-          </ProgressRing>
         </div>
+        <div style={{ padding: "0 16px 16px" }}>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 14 }}>
           <Cell label="להיום" value={s.roots.today} />
@@ -673,6 +756,7 @@ function PersonCard({ p, s, todayKey, channel, onTasks, onAssign, onEdit, onShar
               <button onClick={onEdit} aria-label={`עריכת ${p.name}`} title="עריכה" style={{ ...ghostBtn, padding: "7px 10px" }}>{Ic.dots(14)}</button>
             </>
           )}
+        </div>
         </div>
       </article>
     </div>
@@ -850,7 +934,7 @@ function updatedLabel(iso: string | undefined, todayKey: string): string | null 
   return `עודכן ${relDay(key, todayKey)}`;
 }
 
-function MemberTasksPanel({ members, selected, onSelect, slice, todayKey, onOpen, onStatus, onDelete, onAssign }: {
+function MemberTasksPanel({ members, selected, onSelect, slice, todayKey, onOpen, onStatus, onDelete, onNudge, onAssign }: {
   members: Person[];
   selected: string;
   onSelect: (id: string) => void;
@@ -859,6 +943,7 @@ function MemberTasksPanel({ members, selected, onSelect, slice, todayKey, onOpen
   onOpen: (taskId: string) => void;
   onStatus: (t: Task, s: TaskStatus) => void;
   onDelete: (root: Task) => void;
+  onNudge: (t: Task) => void;
   onAssign: () => void;
 }) {
   const [tab, setTab] = useState<TasksTab>("open");
@@ -1012,6 +1097,11 @@ function MemberTasksPanel({ members, selected, onSelect, slice, todayKey, onOpen
                   </span>
                 </button>
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  {!done && (
+                    <IconAction label={`בקשת עדכון מ${firstWord(person.name)} על "${r.title}"`} onClick={() => onNudge(r)} color={T.accent}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+                    </IconAction>
+                  )}
                   {!done ? (
                     <IconAction label={`סימון "${r.title}" כבוצע`} onClick={() => onStatus(r, "done")} color={T.mint}>{Ic.check(14)}</IconAction>
                   ) : (

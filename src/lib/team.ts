@@ -337,7 +337,11 @@ export function lockManager() {
 // תמונת מצב של כל היומנים (נטען רק כשדשבורד המנהל נפתח)
 // ============================================
 
-export interface JournalSlice { tasks: Task[]; categories: TaskCategory[] }
+export interface JournalSlice {
+  tasks: Task[];
+  categories: TaskCategory[];
+  updatedAt?: Record<string, string>; // rootId → מתי השורה עודכנה לאחרונה בענן (לבקרה של המנהל)
+}
 
 export interface TeamData {
   journals: Record<string, JournalSlice>;
@@ -416,20 +420,21 @@ export async function refetchTeamData() {
   try {
     const { supabase } = await import("./supabase");
     const [tasksRes, catsRes] = await Promise.all([
-      supabase.from("journal_tasks").select("id,payload"),
+      supabase.from("journal_tasks").select("id,payload,updated_at"),
       supabase.from("journal_meta").select("key,payload").like("key", "categories%"),
     ]);
     if (tasksRes.error) throw tasksRes.error;
     const journals: Record<string, JournalSlice> = {};
-    for (const id of ids) journals[id] = { tasks: [], categories: DEFAULT_CATEGORIES };
+    for (const id of ids) journals[id] = { tasks: [], categories: DEFAULT_CATEGORIES, updatedAt: {} };
     for (const r of (catsRes.data ?? []) as { key: string; payload: TaskCategory[] }[]) {
       const jid = r.key === "categories" ? MANAGER_ID : r.key.startsWith("categories@") ? r.key.slice(11) : null;
       if (jid && journals[jid]) journals[jid].categories = r.payload.map((c) => ({ ...c, parentId: c.parentId ?? null }));
     }
-    for (const r of (tasksRes.data ?? []) as { payload: Task & { journalId?: string } }[]) {
+    for (const r of (tasksRes.data ?? []) as { id: string; payload: Task & { journalId?: string }; updated_at?: string }[]) {
       const jid = journalOfPayload(r.payload);
       if (!journals[jid]) continue; // יומן של אשת צוות שהוסרה
       journals[jid].tasks.push(normalizeTask(r.payload));
+      if (r.updated_at) journals[jid].updatedAt![r.id] = r.updated_at;
     }
     for (const j of Object.values(journals)) j.tasks.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     setTeamData({ journals, loaded: true, error: null, fetchedAt: Date.now() });
@@ -443,7 +448,8 @@ export async function upsertJournalRoot(journalId: string, root: Task) {
   const slice = data.journals[journalId] ?? { tasks: [], categories: DEFAULT_CATEGORIES };
   const exists = slice.tasks.some((t) => t.id === root.id);
   const tasks = exists ? slice.tasks.map((t) => (t.id === root.id ? root : t)) : [root, ...slice.tasks];
-  setTeamData({ ...data, journals: { ...data.journals, [journalId]: { ...slice, tasks } } });
+  const updatedAt = { ...(slice.updatedAt ?? {}), [root.id]: new Date().toISOString() };
+  setTeamData({ ...data, journals: { ...data.journals, [journalId]: { ...slice, tasks, updatedAt } } });
 
   if (!hasCloud) {
     try {

@@ -24,7 +24,7 @@ import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, Pro
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 import { NotifyCenter } from "./NotifyCenter";
-import { TeamView } from "./TeamView";
+import { TeamView, TeamStrip } from "./TeamView";
 
 gsap.registerPlugin(useGSAP);
 
@@ -81,6 +81,8 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   const [freshId, setFreshId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  // מהדשבורד הראשי ישר ל"כל המשימות" של איש צוות מסוים
+  const [teamFocus, setTeamFocus] = useState<string | null>(null);
 
   // add category (sidebar)
   const [newCatName, setNewCatName] = useState("");
@@ -549,6 +551,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
               todayKey={todayKey}
               onOpenOwnTask={(id) => setOpenTaskId(id)}
               onOpenNotify={() => setNotifyOpen(true)}
+              focusMember={teamFocus}
             />
           </main>
         </div>
@@ -820,6 +823,15 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                 <StatCell label="באיחור" value={overdueCount} icon={Ic.alert(16)} tone={overdueCount > 0 ? "danger" : undefined}
                   active={overdueOnly} onClick={() => setOverdueOnly(!overdueOnly)} />
               </div>
+
+              {/* הצוות במבט אחד — רק אצל אופיר, ורק כשיש צוות */}
+              {isManager && (
+                <TeamStrip todayKey={todayKey} onOpenMember={(id) => {
+                  setTeamFocus(id);
+                  setView("team");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }} />
+              )}
 
               {/* critical strip */}
               {criticalTasks.length > 0 && (

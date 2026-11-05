@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useToast } from "@/components/Toast";
 import {
   type Task, type TaskStatus, flattenTasks, isDone, formatDateHe, toDateKey, findTaskInTree, emptyTask,
-  STATUS_COLORS, STATUS_LABELS,
+  countSubtasks, STATUS_COLORS, STATUS_LABELS,
 } from "@/lib/tasks";
 import {
   subscribeTeamMeta, getTeamMeta, getServerTeamMeta,
   subscribeTeamData, getTeamData, getServerTeamData, initTeamData, refetchTeamData,
   addMember, updateMember, removeMember, assignTask, upsertJournalRoot, deleteJournalRoot, patchJournalTask,
   addJournalCategory, savePrefs, setManagerPin, lockManager, lockOnOpenEnabled, setLockOnOpen,
+  type JournalSlice,
 } from "@/lib/team";
 import {
   biometricAvailable, biometricEnrolled, biometricLabel, enrollBiometric, removeBiometric,
@@ -33,6 +34,8 @@ type PhoneChannel = "telegram" | "push" | "sms";
 const CHANNEL_LABEL: Record<PhoneChannel, string> = { telegram: "טלגרם", push: "התראות פעילות", sms: "SMS" };
 
 type PersonStats = {
+  // ספירה לפי משימות (שורש), באותם כללים כמו הלשוניות ב"כל המשימות" — כדי שהמספרים יתאימו
+  roots: { open: number; today: number; progress: number; overdue: number };
   all: Task[];
   open: Task[];
   dueToday: Task[];
@@ -46,6 +49,13 @@ type PersonStats = {
 };
 
 function statsFor(roots: Task[], todayKey: string): PersonStats {
+  const tree = (r: Task) => [r, ...flattenTasks(r.subtasks)];
+  const rootCounts = {
+    open: roots.filter((r) => !isDone(r)).length,
+    today: roots.filter((r) => tree(r).some((t) => !isDone(t) && t.dueDate === todayKey)).length,
+    progress: roots.filter((r) => tree(r).some((t) => t.status === "in_progress")).length,
+    overdue: roots.filter((r) => tree(r).some((t) => !isDone(t) && !!t.dueDate && t.dueDate < todayKey)).length,
+  };
   const all = flattenTasks(roots);
   const open = all.filter((t) => !isDone(t));
   const weekAgo = shiftKey(todayKey, -7);
@@ -55,6 +65,7 @@ function statsFor(roots: Task[], todayKey: string): PersonStats {
     .sort()
     .pop() ?? null;
   return {
+    roots: rootCounts,
     all,
     open,
     dueToday: open.filter((t) => t.dueDate === todayKey),
@@ -88,10 +99,11 @@ function journalUrl(id: string): string {
   return typeof window === "undefined" ? journalPath(id) : `${window.location.origin}${journalPath(id)}`;
 }
 
-export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
+export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }: {
   todayKey: string;
   onOpenOwnTask: (id: string) => void;
   onOpenNotify: () => void;
+  focusMember?: string | null; // הגיע מהדשבורד הראשי ← פותחים ישר את כל המשימות שלו/ה
 }) {
   const { toast } = useToast();
   const meta = useSyncExternalStore(subscribeTeamMeta, getTeamMeta, getServerTeamMeta);
@@ -119,10 +131,10 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
     meta.telegram[id] ? "telegram" : (meta.push[id] ?? 0) > 0 ? "push" : meta.sms[id] ? "sms" : null;
   const managerChannel = phoneChannel(MANAGER_ID);
   const suggestedName = meta.roster.members.some((m) => m.name.trim() === SUGGESTED_MEMBER_NAME) ? "" : SUGGESTED_MEMBER_NAME;
-  const teamOpen = members.reduce((n, p) => n + stats[p.id].open.length, 0);
+  const teamOpen = members.reduce((n, p) => n + stats[p.id].roots.open, 0);
   const teamDoneWeek = members.reduce((n, p) => n + stats[p.id].doneWeek.length, 0);
-  const teamOverdue = members.reduce((n, p) => n + stats[p.id].overdue.length, 0);
-  const teamToday = members.reduce((n, p) => n + stats[p.id].dueToday.length, 0);
+  const teamOverdue = members.reduce((n, p) => n + stats[p.id].roots.overdue, 0);
+  const teamToday = members.reduce((n, p) => n + stats[p.id].roots.today, 0);
 
   // ---- dialogs ----
   const [adding, setAdding] = useState(false);
@@ -131,6 +143,39 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
   const [shareFor, setShareFor] = useState<TeamMember | null>(null);
   const [pinFlow, setPinFlow] = useState<"change" | null>(null);
   const [openMember, setOpenMember] = useState<{ jid: string; taskId: string } | null>(null);
+  // של מי המשימות שמוצגות ב"כל המשימות" (ברירת מחדל: איש הצוות הראשון)
+  const [tasksOfState, setTasksOf] = useState<string | null>(focusMember ?? null);
+  const tasksOf = tasksOfState && members.some((m) => m.id === tasksOfState) ? tasksOfState : members[0]?.id ?? null;
+
+  // הגעה מהדשבורד הראשי עם איש צוות מסוים — גוללים ישר לרשימה המלאה
+  useEffect(() => {
+    if (!focusMember) return;
+    const t = setTimeout(() => document.getElementById("tj-member-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" }), 350);
+    return () => clearTimeout(t);
+  }, [focusMember]);
+
+  function showTasksOf(id: string) {
+    setTasksOf(id);
+    requestAnimationFrame(() => document.getElementById("tj-member-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
+  async function setMemberStatus(jid: string, t: Task, status: TaskStatus) {
+    if (status === "done" && t.status !== "done") celebrate();
+    await patchJournalTask(jid, t.id, {
+      status,
+      endDate: status === "done" ? (t.endDate ?? todayKey) : t.endDate,
+    });
+  }
+
+  function deleteMemberTask(jid: string, root: Task) {
+    const name = people.find((p) => p.id === jid)?.name ?? "";
+    if (!confirm(`למחוק את "${root.title || "ללא שם"}" מהיומן של ${name}? כולל כל השלבים.`)) return;
+    deleteJournalRoot(jid, root.id);
+    toast("המשימה נמחקה", "info", {
+      label: "ביטול",
+      onClick: () => { upsertJournalRoot(jid, root).catch(() => toast("השחזור נכשל", "error")); },
+    });
+  }
 
   function openTask(jid: string, taskId: string) {
     if (jid === MANAGER_ID) onOpenOwnTask(taskId);
@@ -226,12 +271,28 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify }: {
               : people.map((p) => (
                 <PersonCard key={p.id} p={p} s={stats[p.id]} todayKey={todayKey}
                   channel={phoneChannel(p.id)}
+                  onTasks={() => showTasksOf(p.id)}
                   onAssign={() => setAssignTo(p.id)}
                   onEdit={() => { const m = meta.roster.members.find((x) => x.id === p.id); if (m) setEditing(m); }}
                   onShare={() => { const m = meta.roster.members.find((x) => x.id === p.id); if (m) setShareFor(m); }}
                 />
               ))}
           </div>
+
+          {/* ===== כל המשימות של איש הצוות — רשימה מלאה עם שליטה ===== */}
+          {tasksOf && !loading && (
+            <MemberTasksPanel
+              members={members}
+              selected={tasksOf}
+              onSelect={setTasksOf}
+              slice={data.journals[tasksOf]}
+              todayKey={todayKey}
+              onOpen={(taskId) => openTask(tasksOf, taskId)}
+              onStatus={(t, st) => setMemberStatus(tasksOf, t, st)}
+              onDelete={(root) => deleteMemberTask(tasksOf, root)}
+              onAssign={() => setAssignTo(tasksOf)}
+            />
+          )}
 
           <div className="tj-team-cols" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(0, 1fr)", gap: 14, alignItems: "start" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
@@ -551,9 +612,9 @@ function DeviceLockRows() {
   );
 }
 
-function PersonCard({ p, s, todayKey, channel, onAssign, onEdit, onShare }: {
+function PersonCard({ p, s, todayKey, channel, onTasks, onAssign, onEdit, onShare }: {
   p: Person; s: PersonStats; todayKey: string; channel: PhoneChannel | null;
-  onAssign: () => void; onEdit: () => void; onShare: () => void;
+  onTasks: () => void; onAssign: () => void; onEdit: () => void; onShare: () => void;
 }) {
   const tilt = useTilt<HTMLDivElement>(4);
   const pc = personVar(p.color);
@@ -586,24 +647,28 @@ function PersonCard({ p, s, todayKey, channel, onAssign, onEdit, onShare }: {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 14 }}>
-          <Cell label="להיום" value={s.dueToday.length} />
-          <Cell label="בתהליך" value={s.inProgress.length} />
-          <Cell label="באיחור" value={s.overdue.length} danger={s.overdue.length > 0} />
+          <Cell label="להיום" value={s.roots.today} />
+          <Cell label="בתהליך" value={s.roots.progress} />
+          <Cell label="באיחור" value={s.roots.overdue} danger={s.roots.overdue > 0} />
           <Cell label="השבוע ✓" value={s.doneWeek.length} mint />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 11.5, color: T.ink3 }}>
           {Ic.clock(12)} פעילות אחרונה: {relDay(s.lastActive, todayKey)}
-          <span style={{ marginInlineStart: "auto" }} className="num">{s.open.length} פתוחות</span>
+          <span style={{ marginInlineStart: "auto" }} className="num">{s.roots.open} פתוחות</span>
         </div>
 
         <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
-          <a href={journalPath(p.id)} style={{ ...ghostBtn, textDecoration: "none", flex: 1, whiteSpace: "nowrap" }}>
-            {Ic.arrowUpLeft(12)} {p.isManager ? "ליומן שלי" : "ליומן"}
-          </a>
+          {p.isManager ? (
+            <a href={journalPath(p.id)} style={{ ...ghostBtn, textDecoration: "none", flex: 1, whiteSpace: "nowrap" }}>
+              {Ic.arrowUpLeft(12)} ליומן שלי
+            </a>
+          ) : (
+            <button onClick={onTasks} style={{ ...softBtn, flex: 1.4, whiteSpace: "nowrap" }}>{Ic.layers(12)} כל המשימות</button>
+          )}
           {!p.isManager && (
             <>
-              <button onClick={onAssign} style={{ ...softBtn, flex: 1, whiteSpace: "nowrap" }}>{Ic.send(12)} הקצאה</button>
+              <button onClick={onAssign} style={{ ...ghostBtn, flex: 1, whiteSpace: "nowrap" }}>{Ic.send(12)} הקצאה</button>
               <button onClick={onShare} aria-label={`שיתוף הקישור של ${p.name}`} title="שיתוף הקישור" style={{ ...ghostBtn, padding: "7px 10px" }}>{Ic.share(13)}</button>
               <button onClick={onEdit} aria-label={`עריכת ${p.name}`} title="עריכה" style={{ ...ghostBtn, padding: "7px 10px" }}>{Ic.dots(14)}</button>
             </>
@@ -759,6 +824,268 @@ function Onboarding({ onAdd, onNotify, phoneLinked, suggestedName }: { onAdd: ()
         {!phoneLinked && <button onClick={onNotify} style={{ ...softBtn, height: 44, padding: "0 16px" }}>{Ic.bell(13)} קודם, התראות לטלפון שלי</button>}
       </div>
       <style>{`@media (max-width: 900px) { .tj-onboard { grid-template-columns: 1fr 1fr !important; } } @media (max-width: 520px) { .tj-onboard { grid-template-columns: 1fr !important; } }`}</style>
+    </section>
+  );
+}
+
+// ============ כל המשימות של איש צוות: רשימה מלאה עם שליטה מלאה ============
+
+type TasksTab = "open" | "progress" | "overdue" | "critical" | "done" | "all";
+type TasksSort = "due" | "updated" | "created";
+
+const TAB_LABEL: Record<TasksTab, string> = {
+  open: "פתוחות", progress: "בתהליך", overdue: "באיחור", critical: "קריטיות", done: "הושלמו", all: "הכל",
+};
+
+function daysBetween(fromKey: string, toKey: string): number {
+  return Math.round((Date.parse(toKey) - Date.parse(fromKey)) / 86400000);
+}
+
+function updatedLabel(iso: string | undefined, todayKey: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const key = toDateKey(d);
+  if (key === todayKey) return `עודכן היום ${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+  return `עודכן ${relDay(key, todayKey)}`;
+}
+
+function MemberTasksPanel({ members, selected, onSelect, slice, todayKey, onOpen, onStatus, onDelete, onAssign }: {
+  members: Person[];
+  selected: string;
+  onSelect: (id: string) => void;
+  slice: JournalSlice | undefined;
+  todayKey: string;
+  onOpen: (taskId: string) => void;
+  onStatus: (t: Task, s: TaskStatus) => void;
+  onDelete: (root: Task) => void;
+  onAssign: () => void;
+}) {
+  const [tab, setTab] = useState<TasksTab>("open");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<TasksSort>("due");
+  const person = members.find((m) => m.id === selected) ?? members[0];
+  const roots = useMemo(() => slice?.tasks ?? [], [slice]);
+  const cats = useMemo(() => new Map((slice?.categories ?? []).map((c) => [c.id, c])), [slice]);
+
+  const tree = (r: Task) => [r, ...flattenTasks(r.subtasks)];
+  const isOverdue = (t: Task) => !isDone(t) && !!t.dueDate && t.dueDate < todayKey;
+  const match: Record<TasksTab, (r: Task) => boolean> = {
+    open: (r) => !isDone(r),
+    progress: (r) => tree(r).some((t) => t.status === "in_progress"),
+    overdue: (r) => tree(r).some(isOverdue),
+    critical: (r) => tree(r).some((t) => t.critical && !isDone(t)),
+    done: (r) => isDone(r),
+    all: () => true,
+  };
+  const counts = (Object.keys(TAB_LABEL) as TasksTab[]).map((k) => [k, roots.filter(match[k]).length] as const);
+
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const list = roots
+    .filter(match[tab])
+    .filter((r) => !words.length || tree(r).some((t) => {
+      const hay = [t.title, t.description, t.notes, t.categoryId ? cats.get(t.categoryId)?.name : ""].join(" ").toLowerCase();
+      return words.every((w) => hay.includes(w));
+    }))
+    .sort((a, b) => {
+      if (sort === "updated") return (slice?.updatedAt?.[b.id] ?? b.createdAt).localeCompare(slice?.updatedAt?.[a.id] ?? a.createdAt);
+      if (sort === "created") return b.createdAt.localeCompare(a.createdAt);
+      return (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
+    });
+
+  const order: TaskStatus[] = ["todo", "in_progress", "done"];
+
+  return (
+    <section id="tj-member-tasks" className="tj-card" style={{ ...card, padding: 16, scrollMarginTop: 84 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <Avatar name={person.name} color={person.color} size={34} />
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>
+            כל המשימות של {person.name}
+          </h3>
+          <div style={{ fontSize: 11.5, color: T.ink3 }}>שינוי כאן נשמר ישר ביומן שלה ומתעדכן אצלה מיד</div>
+        </div>
+        <button onClick={onAssign} style={{ ...softBtn, height: 34 }}>{Ic.send(12)} משימה חדשה ל{firstWord(person.name)}</button>
+        <a href={journalPath(person.id)} style={{ ...ghostBtn, height: 34, textDecoration: "none" }}>{Ic.arrowUpLeft(12)} היומן שלה</a>
+      </div>
+
+      {members.length > 1 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }} role="radiogroup" aria-label="של מי">
+          {members.map((m) => {
+            const on = m.id === selected;
+            return (
+              <button key={m.id} role="radio" aria-checked={on} onClick={() => onSelect(m.id)} style={{
+                display: "inline-flex", alignItems: "center", gap: 7, padding: "4px 12px 4px 5px", borderRadius: 99,
+                border: `1px solid ${on ? alpha(personVar(m.color), 55) : T.line}`,
+                background: on ? alpha(personVar(m.color), 12) : "transparent",
+                cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: on ? 700 : 500, color: T.ink,
+              }}>
+                <Avatar name={m.name} color={m.color} size={22} /> {m.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="no-scrollbar" role="tablist" aria-label="סינון לפי מצב" style={{ display: "flex", gap: 4, overflowX: "auto", background: T.bg2, borderRadius: 13, padding: 3, marginBottom: 10 }}>
+        {counts.map(([k, n]) => {
+          const on = tab === k;
+          const warn = (k === "overdue" || k === "critical") && n > 0;
+          return (
+            <button key={k} role="tab" aria-selected={on} onClick={() => setTab(k)} style={{
+              display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0,
+              border: "none", borderRadius: 10, padding: "7px 12px", cursor: "pointer", fontFamily: "inherit",
+              fontSize: 12.5, fontWeight: on ? 700 : 500,
+              background: on ? T.surface : "transparent",
+              boxShadow: on ? `0 1px 2px var(--tj-shadow), inset 0 0 0 1px ${T.line}` : "none",
+              color: on ? T.ink : T.ink2,
+            }}>
+              {TAB_LABEL[k]}
+              <span className="num" style={{
+                fontSize: 11, fontWeight: 700, borderRadius: 99, padding: "0 7px",
+                color: warn ? T.danger : on ? T.accent : T.ink3,
+                background: warn ? T.dangerSoft : on ? T.accentSoft : "transparent",
+              }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+          <span style={{ position: "absolute", insetInlineStart: 11, top: "50%", transform: "translateY(-50%)", color: T.ink3, pointerEvents: "none" }}>{Ic.search(14)}</span>
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`חיפוש במשימות של ${firstWord(person.name)}…`}
+            aria-label="חיפוש במשימות" style={{ ...inputStyle, width: "100%", paddingInlineStart: 33, height: 38 }} />
+        </div>
+        <select value={sort} onChange={(e) => setSort(e.target.value as TasksSort)} aria-label="מיון" style={{ ...inputStyle, height: 38, padding: "0 10px" }}>
+          <option value="due">לפי תאריך יעד</option>
+          <option value="updated">לפי עדכון אחרון</option>
+          <option value="created">לפי תאריך פתיחה</option>
+        </select>
+      </div>
+
+      {list.length === 0 ? (
+        <EmptyLine icon={tab === "overdue" || tab === "critical" ? Ic.sparkle(16) : Ic.inbox(16)}
+          text={roots.length === 0 ? `ביומן של ${firstWord(person.name)} עוד אין משימות.` : q ? "אין משימות שתואמות לחיפוש." : `אין משימות ${TAB_LABEL[tab]}.`} />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {list.map((r) => {
+            const done = isDone(r);
+            const cat = r.categoryId ? cats.get(r.categoryId) : undefined;
+            const sub = countSubtasks(r);
+            const late = isOverdue(r) ? daysBetween(r.dueDate!, todayKey) : 0;
+            const subLate = !late && tree(r).slice(1).some(isOverdue);
+            const upd = updatedLabel(slice?.updatedAt?.[r.id], todayKey);
+            return (
+              <div key={r.id} style={{
+                display: "flex", alignItems: "center", gap: 10, borderRadius: 14, padding: "10px 12px",
+                background: r.critical && !done ? alpha(T.danger, 5) : T.bg2, opacity: done ? 0.62 : 1,
+              }}>
+                <button onClick={() => onStatus(r, order[(order.indexOf(r.status) + 1) % 3])}
+                  title={`סטטוס: ${STATUS_LABELS[r.status]} (לחיצה מקדמת)`} aria-label={`סטטוס: ${STATUS_LABELS[r.status]} — לחיצה מקדמת`}
+                  style={{ background: "none", border: "none", padding: 2, cursor: "pointer", color: STATUS_COLORS[r.status], display: "inline-flex", flexShrink: 0 }}>
+                  <StatusIcon status={r.status} size={20} />
+                </button>
+                <button onClick={() => onOpen(r.id)} style={{
+                  flex: 1, minWidth: 0, textAlign: "start", background: "none", border: "none", padding: 0,
+                  cursor: "pointer", fontFamily: "inherit", color: T.ink,
+                }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, textDecoration: done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+                      {r.title || "ללא שם"}
+                    </span>
+                    {r.critical && !done && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700, color: T.danger }}>{Ic.flame(11)} קריטית</span>}
+                    {r.assignedBy && <span style={{ fontSize: 10, fontWeight: 700, color: T.accent, background: T.accentSoft, borderRadius: 99, padding: "1px 8px" }}>מ{MANAGER_NAME}</span>}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11, color: T.ink3 }}>
+                    <span style={{ color: T.ink2, fontWeight: 600 }}>{STATUS_LABELS[r.status]}</span>
+                    {cat && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: T.ink2 }}><span style={{ width: 7, height: 7, borderRadius: 99, background: cat.color }} />{cat.name}</span>}
+                    {r.dueDate && (
+                      <span className="num" style={{ color: late ? T.danger : T.ink2, fontWeight: late ? 700 : 400 }}>
+                        {late ? `באיחור ${late === 1 ? "יום" : `${late} ימים`} · ` : "יעד "}{formatDateHe(r.dueDate)}
+                      </span>
+                    )}
+                    {subLate && <span style={{ color: T.danger }}>שלב באיחור</span>}
+                    {sub.total > 0 && <span className="num">שלבים {sub.done}/{sub.total}</span>}
+                    {r.reminders.some((x) => !x.fired) && <span style={{ display: "inline-flex" }} title="יש תזכורת">{Ic.clock(11)}</span>}
+                    {upd && <span>{upd}</span>}
+                  </span>
+                </button>
+                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  {!done ? (
+                    <IconAction label={`סימון "${r.title}" כבוצע`} onClick={() => onStatus(r, "done")} color={T.mint}>{Ic.check(14)}</IconAction>
+                  ) : (
+                    <IconAction label={`פתיחה מחדש של "${r.title}"`} onClick={() => onStatus(r, "todo")} color={T.ink2}>{Ic.refresh(13)}</IconAction>
+                  )}
+                  <IconAction label={`מחיקת "${r.title}"`} onClick={() => onDelete(r)} color={T.ink3}>{Ic.trash(13)}</IconAction>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function IconAction({ label, onClick, color, children }: { label: string; onClick: () => void; color: string; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} aria-label={label} title={label} style={{
+      width: 32, height: 32, borderRadius: 99, border: `1px solid ${T.line}`, background: T.surface,
+      color, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center",
+    }}>{children}</button>
+  );
+}
+
+function firstWord(name: string): string {
+  return name.trim().split(/\s+/)[0] || name;
+}
+
+// ============ פס הצוות בדשבורד הראשי של אופיר ============
+
+export function TeamStrip({ todayKey, onOpenMember }: { todayKey: string; onOpenMember: (id: string) => void }) {
+  const meta = useSyncExternalStore(subscribeTeamMeta, getTeamMeta, getServerTeamMeta);
+  const data = useSyncExternalStore(subscribeTeamData, getTeamData, getServerTeamData);
+  const members = meta.roster.members;
+  useEffect(() => { if (members.length) initTeamData(); }, [members.length]);
+  if (!members.length) return null;
+  return (
+    <section className="tj-card" style={{ ...card, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 10, background: T.accentSoft, color: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.users(15)}</span>
+        <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>הצוות</h2>
+        <span style={{ fontSize: 11.5, color: T.ink3 }}>לחיצה פותחת את כל המשימות</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
+        {members.map((m) => {
+          const slice = data.journals[m.id];
+          const s = statsFor(slice?.tasks ?? [], todayKey);
+          const loading = !data.loaded;
+          return (
+            <button key={m.id} onClick={() => onOpenMember(m.id)} style={{
+              display: "flex", alignItems: "center", gap: 10, textAlign: "start", width: "100%",
+              background: s.roots.overdue ? alpha(T.danger, 5) : T.bg2, border: "none", borderRadius: 14,
+              padding: "10px 12px", cursor: "pointer", fontFamily: "inherit", color: T.ink,
+            }}>
+              <Avatar name={m.name} color={m.color} size={34} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13.5, fontWeight: 700 }}>{m.name}</span>
+                <span className="num" style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11.5, color: T.ink2, marginTop: 2 }}>
+                  {loading ? <span style={{ color: T.ink3 }}>טוען…</span> : (
+                    <>
+                      <span>{s.roots.open} פתוחות</span>
+                      <span>{s.roots.today} להיום</span>
+                      <span style={{ color: s.roots.overdue ? T.danger : T.ink2, fontWeight: s.roots.overdue ? 700 : 400 }}>{s.roots.overdue} באיחור</span>
+                      <span style={{ color: T.mint }}>{s.doneWeek.length} הושלמו השבוע</span>
+                    </>
+                  )}
+                </span>
+              </span>
+              <span style={{ color: T.ink3, opacity: 0.7 }}>{Ic.chevL(14)}</span>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }

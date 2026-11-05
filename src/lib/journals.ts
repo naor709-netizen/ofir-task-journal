@@ -48,11 +48,6 @@ export interface TeamRoster {
   members: TeamMember[];
 }
 
-export interface ManagerPin {
-  salt: string;
-  hash: string;
-}
-
 export interface NotifyPrefs {
   memberDone: boolean; // אשת צוות סיימה משימה
   memberNew: boolean; // אשת צוות הוסיפה משימה
@@ -69,7 +64,6 @@ export function metaKey(base: string, journalId: string): string {
 
 export const META = {
   team: "team",
-  pin: "manager_pin",
   prefs: "notify_prefs",
   telegram: (journalId: string) => `tg:${journalId}`,
   telegramPending: (journalId: string) => `tg-pending:${journalId}`,

@@ -8,7 +8,7 @@
 import {
   MANAGER_ID, META, DEFAULT_PREFS, metaKey, journalOfPayload, normalizeRoster, newJournalId,
   MEMBER_COLOR_ORDER, rowPayload,
-  type TeamRoster, type TeamMember, type ManagerPin, type NotifyPrefs, type PersonColor,
+  type TeamRoster, type TeamMember, type NotifyPrefs, type PersonColor,
 } from "./journals";
 import {
   type Task, type TaskCategory, DEFAULT_CATEGORIES, normalizeTask, storageKeyFor,
@@ -22,7 +22,6 @@ export type SmsLinkInfo = { mask: string; linkedAt: string } | null;
 
 export interface TeamMeta {
   roster: TeamRoster;
-  pin: ManagerPin | null;
   prefs: NotifyPrefs;
   telegram: Record<string, TelegramLink>;
   sms: Record<string, SmsLinkInfo>;
@@ -32,12 +31,10 @@ export interface TeamMeta {
 }
 
 const META_CACHE = "ofir-team-cache";
-const UNLOCK_KEY = "ofir-manager-unlock";
-const DEVICE_KEY = "ofir-manager-device";
 
 function readCache(): TeamMeta {
   const base: TeamMeta = {
-    roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, push: {},
+    roster: { members: [] }, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, push: {},
     loaded: false, mode: hasCloud ? "cloud" : "local",
   };
   if (typeof window === "undefined") return base;
@@ -48,7 +45,6 @@ function readCache(): TeamMeta {
     return {
       ...base,
       roster: normalizeRoster(p.roster),
-      pin: p.pin ?? null,
       prefs: { ...DEFAULT_PREFS, ...(p.prefs ?? {}) },
       telegram: p.telegram ?? {},
       sms: p.sms ?? {},
@@ -64,7 +60,7 @@ function readCache(): TeamMeta {
 let meta: TeamMeta | null = null;
 const metaListeners = new Set<() => void>();
 const SERVER_META: TeamMeta = {
-  roster: { members: [] }, pin: null, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, push: {}, loaded: false, mode: "cloud",
+  roster: { members: [] }, prefs: DEFAULT_PREFS, telegram: {}, sms: {}, push: {}, loaded: false, mode: "cloud",
 };
 
 export function subscribeTeamMeta(cb: () => void): () => void {
@@ -83,7 +79,7 @@ function setMeta(next: TeamMeta) {
   meta = next;
   try {
     localStorage.setItem(META_CACHE, JSON.stringify({
-      roster: next.roster, pin: next.pin, prefs: next.prefs, telegram: next.telegram, sms: next.sms, push: next.push,
+      roster: next.roster, prefs: next.prefs, telegram: next.telegram, sms: next.sms, push: next.push,
     }));
   } catch { /* quota */ }
   metaListeners.forEach((l) => l());
@@ -117,7 +113,7 @@ async function refetchMeta() {
   try {
     const { supabase } = await import("./supabase");
     const [main, tg, sms, subs] = await Promise.all([
-      supabase.from("journal_meta").select("key,payload").in("key", [META.team, META.pin, META.prefs]),
+      supabase.from("journal_meta").select("key,payload").in("key", [META.team, META.prefs]),
       supabase.from("journal_meta").select("key,payload").like("key", "tg:%"),
       supabase.from("journal_meta").select("key,payload").like("key", "sms:%"),
       // רק השיוך ליומן — לא מפתחות המנוי
@@ -141,10 +137,8 @@ async function refetchMeta() {
       const jid = r.journal || MANAGER_ID;
       push[jid] = (push[jid] ?? 0) + 1;
     }
-    const pin = get(META.pin) as ManagerPin | undefined;
     setMeta({
       roster: normalizeRoster(get(META.team)),
-      pin: pin?.hash && pin?.salt ? pin : null,
       prefs: { ...DEFAULT_PREFS, ...((get(META.prefs) as Partial<NotifyPrefs>) ?? {}) },
       telegram,
       sms: smsLinks,
@@ -218,119 +212,11 @@ export async function savePrefs(prefs: NotifyPrefs) {
   await upsertMeta(META.prefs, prefs);
 }
 
-// ---------- manager PIN ----------
-// וילון פרטיות, לא אבטחה: הנתונים עצמם נגישים לכל מי שמחזיק במפתח ה-anon.
-// מונע מאשת צוות לפתוח בטעות (או מסקרנות) את היומן ואת דשבורד המנהל.
-
-async function sha256(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-export async function setManagerPin(pin: string) {
-  const salt = uid();
-  const hash = await sha256(`${salt}:${pin}`);
-  const p = { salt, hash };
-  setMeta({ ...getTeamMeta(), pin: p });
-  markUnlocked(hash);
-  await upsertMeta(META.pin, p);
-}
-
-export async function verifyManagerPin(pin: string): Promise<boolean> {
-  const p = getTeamMeta().pin;
-  if (!p) return true;
-  const ok = (await sha256(`${p.salt}:${pin}`)) === p.hash;
-  if (ok) markUnlocked(p.hash);
-  return ok;
-}
-
-function markUnlocked(hash: string) {
-  try {
-    localStorage.setItem(UNLOCK_KEY, hash);
-    localStorage.setItem(DEVICE_KEY, "1");
-    noteSeen();
-  } catch { /* ignore */ }
-}
-
-// כניסה בטביעת אצבע / Face ID: המכשיר אימת את בעליו — פותחים כמו קוד נכון
-export async function unlockWithBiometric(): Promise<boolean> {
-  const { verifyBiometric } = await import("./biometric");
-  const r = await verifyBiometric();
-  const p = getTeamMeta().pin;
-  if (!r.ok || !p) return false;
-  markUnlocked(p.hash);
-  return true;
-}
-
+// ---------- מכשיר המנהל ----------
+// אין נעילה (הוסרה לבקשת המשתמש). רק מסמנים שזה המכשיר של אופיר, כדי להציג ביומן
+// של איש צוות קיצור חזרה לדשבורד הצוות.
 export function markManagerDevice() {
-  try { localStorage.setItem(DEVICE_KEY, "1"); } catch { /* ignore */ }
-}
-
-// ---------- נעילה בכל פתיחה (הגדרה של המכשיר, לא של היומן) ----------
-// כבוי: קוד פעם אחת במכשיר (ברירת המחדל). דלוק: אחרי 5 דקות מחוץ ליומן
-// מבקשים שוב — טביעת אצבע / Face ID או קוד.
-
-const LOCK_ON_OPEN_KEY = "ofir-lock-on-open";
-const SEEN_KEY = "ofir-manager-seen";
-const AWAY_MS = 5 * 60000;
-
-export function lockOnOpenEnabled(): boolean {
-  try { return localStorage.getItem(LOCK_ON_OPEN_KEY) === "1"; } catch { return false; }
-}
-
-export function setLockOnOpen(on: boolean) {
-  try {
-    if (on) { localStorage.setItem(LOCK_ON_OPEN_KEY, "1"); noteSeen(); }
-    else localStorage.removeItem(LOCK_ON_OPEN_KEY);
-  } catch { /* ignore */ }
-}
-
-function noteSeen() {
-  try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch { /* ignore */ }
-}
-
-function awayTooLong(): boolean {
-  if (!lockOnOpenEnabled()) return false;
-  const t = Number(localStorage.getItem(SEEN_KEY) || 0);
-  return !t || Date.now() - t > AWAY_MS;
-}
-
-let startChecked = false;
-
-export function isUnlocked(pin: ManagerPin | null): boolean {
-  if (!pin) return true;
-  try {
-    // בפתיחה הראשונה של העמוד: אם היומן היה סגור יותר מ-5 דקות — ננעל
-    if (!startChecked) {
-      startChecked = true;
-      if (awayTooLong()) localStorage.removeItem(UNLOCK_KEY);
-    }
-    return localStorage.getItem(UNLOCK_KEY) === pin.hash;
-  } catch { return false; }
-}
-
-// מעקב בזמן שהיומן פתוח: חזרה מהרקע אחרי 5 דקות → נעילה
-export function watchAutoLock(onLock: () => void): () => void {
-  function onVisibility() {
-    if (document.visibilityState === "hidden") { noteSeen(); return; }
-    if (awayTooLong() && localStorage.getItem(UNLOCK_KEY)) {
-      localStorage.removeItem(UNLOCK_KEY);
-      onLock();
-    }
-    noteSeen();
-  }
-  document.addEventListener("visibilitychange", onVisibility);
-  window.addEventListener("pagehide", noteSeen);
-  const iv = setInterval(() => { if (document.visibilityState === "visible") noteSeen(); }, 30000);
-  return () => {
-    document.removeEventListener("visibilitychange", onVisibility);
-    window.removeEventListener("pagehide", noteSeen);
-    clearInterval(iv);
-  };
-}
-
-export function lockManager() {
-  try { localStorage.removeItem(UNLOCK_KEY); } catch { /* ignore */ }
+  try { localStorage.setItem("ofir-manager-device", "1"); } catch { /* ignore */ }
 }
 
 // ============================================

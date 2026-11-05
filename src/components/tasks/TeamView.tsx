@@ -10,12 +10,9 @@ import {
   subscribeTeamMeta, getTeamMeta, getServerTeamMeta,
   subscribeTeamData, getTeamData, getServerTeamData, initTeamData, refetchTeamData,
   addMember, updateMember, removeMember, assignTask, upsertJournalRoot, deleteJournalRoot, patchJournalTask,
-  addJournalCategory, savePrefs, setManagerPin, lockManager, lockOnOpenEnabled, setLockOnOpen, nudgeTask,
+  addJournalCategory, savePrefs, nudgeTask,
   type JournalSlice,
 } from "@/lib/team";
-import {
-  biometricAvailable, biometricEnrolled, biometricLabel, enrollBiometric, removeBiometric,
-} from "@/lib/biometric";
 import {
   MANAGER_ID, MANAGER_NAME, PERSON_COLORS, MEMBER_COLOR_ORDER, SUGGESTED_MEMBER_NAME, personVar, journalPath,
   type PersonColor, type TeamMember,
@@ -141,7 +138,6 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
   const [assignTo, setAssignTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<TeamMember | null>(null);
   const [shareFor, setShareFor] = useState<TeamMember | null>(null);
-  const [pinFlow, setPinFlow] = useState<"change" | null>(null);
   const [openMember, setOpenMember] = useState<{ jid: string; taskId: string } | null>(null);
   // של מי המשימות שמוצגות ב"כל המשימות" (ברירת מחדל: איש הצוות הראשון)
   const [tasksOfState, setTasksOf] = useState<string | null>(focusMember ?? null);
@@ -455,7 +451,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
 
               {/* ---- הגדרות מנהל ---- */}
               <section className="tj-card" style={{ ...card, padding: 16 }}>
-                <Head icon={Ic.sliders(15)} title="עדכונים ופרטיות" />
+                <Head icon={Ic.sliders(15)} title="עדכונים לטלפון" />
                 <button onClick={onOpenNotify} style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "start",
                   background: managerChannel ? T.mintSoft : T.accentSoft, border: "none", borderRadius: 14,
@@ -478,18 +474,6 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
                   onChange={(v) => savePrefs({ ...meta.prefs, memberNew: v })} />
                 <PrefRow label="תמונת מצב הצוות בבריף הבוקר ובסיכום השבועי" on={meta.prefs.teamBrief}
                   onChange={(v) => savePrefs({ ...meta.prefs, teamBrief: v })} />
-                {meta.pin && <DeviceLockRows />}
-                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                  <button onClick={() => setPinFlow("change")} style={ghostBtn}>{Ic.lock(12)} {meta.pin ? "החלפת קוד" : "הגדרת קוד"}</button>
-                  {meta.pin && (
-                    <button onClick={() => { lockManager(); window.location.reload(); }} style={ghostBtn}>{Ic.logout(12)} נעילה עכשיו</button>
-                  )}
-                </div>
-                {!meta.pin && (
-                  <p style={{ margin: "10px 0 0", fontSize: 11.5, color: T.danger, lineHeight: 1.5 }}>
-                    אין קוד ליומן שלך — כל מי שמחזיק בכתובת הראשית יכול לפתוח אותו.
-                  </p>
-                )}
               </section>
             </div>
           </div>
@@ -504,7 +488,6 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
       {adding && (
         <AddMemberDialog
           initialName={suggestedName}
-          needsPin={!meta.pin}
           usedColors={meta.roster.members.map((m) => m.color)}
           onClose={() => setAdding(false)}
           onCreated={(m) => { setAdding(false); setShareFor(m); }}
@@ -527,11 +510,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
           onShare={() => { setShareFor(editing); setEditing(null); }} />
       )}
       {shareFor && <ShareDialog member={shareFor} onClose={() => setShareFor(null)} />}
-      {pinFlow && (
-        <Sheet title={meta.pin ? "החלפת קוד המנהל" : "הגדרת קוד המנהל"} icon={Ic.lock(16)} onClose={() => setPinFlow(null)} side="center" width={400}>
-          <PinSetup onDone={() => { setPinFlow(null); toast("הקוד נשמר", "success"); }} />
-        </Sheet>
-      )}
+
       {openMember && openRoot && (
         <TaskModal
           root={openRoot}
@@ -614,72 +593,6 @@ function PrefRow({ label, on, onChange }: { label: string; on: boolean; onChange
       <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>{label}</span>
       <Toggle on={on} onChange={onChange} label={label} />
     </div>
-  );
-}
-
-// הגדרות של המכשיר הזה בלבד (localStorage) — לא נוגעות ביומן או בענן
-function DeviceLockRows() {
-  const { toast } = useToast();
-  const label = biometricLabel();
-  const [avail, setAvail] = useState<boolean | null>(null);
-  const [enrolled, setEnrolled] = useState(() => biometricEnrolled());
-  const [lockOnOpen, setLockOnOpenState] = useState(() => lockOnOpenEnabled());
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    biometricAvailable().then((v) => { if (!cancelled) setAvail(v); });
-    return () => { cancelled = true; };
-  }, []);
-
-  async function toggleBio(on: boolean) {
-    if (!on) {
-      removeBiometric();
-      setEnrolled(false);
-      toast(`${label} כובה במכשיר הזה`, "info");
-      return;
-    }
-    setBusy(true);
-    const r = await enrollBiometric(MANAGER_NAME);
-    setBusy(false);
-    if (r.ok) {
-      setEnrolled(true);
-      setLockOnOpen(true);
-      setLockOnOpenState(true);
-      toast(`${label} הופעל — היומן ייפתח איתו בפעם הבאה`, "success");
-    } else if (r.reason !== "cancelled") {
-      toast(r.reason === "unsupported" ? `${label} לא זמין במכשיר או בדפדפן הזה` : `ההפעלה נכשלה`, "error");
-    }
-  }
-
-  function toggleLock(on: boolean) {
-    setLockOnOpen(on);
-    setLockOnOpenState(on);
-  }
-
-  return (
-    <>
-      {avail && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: `1px solid ${T.line}` }}>
-          <span style={{ color: T.accent, display: "inline-flex" }}>{Ic.fingerprint(16)}</span>
-          <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>
-            כניסה עם {label} במכשיר הזה
-            <span style={{ display: "block", fontSize: 11, color: T.ink3 }}>נשמר רק במכשיר — לא בענן ולא ביומן</span>
-          </span>
-          {busy ? <span style={{ fontSize: 11.5, color: T.ink3 }}>ממתין…</span> : <Toggle on={enrolled} onChange={toggleBio} label={`כניסה עם ${label}`} />}
-        </div>
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: `1px solid ${T.line}` }}>
-        <span style={{ color: T.ink3, display: "inline-flex" }}>{Ic.lock(15)}</span>
-        <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>
-          לבקש שוב בכל פתיחה
-          <span style={{ display: "block", fontSize: 11, color: T.ink3 }}>
-            אחרי 5 דקות מחוץ ליומן — {enrolled ? `${label} או קוד` : "קוד"}. כבוי: קוד פעם אחת במכשיר.
-          </span>
-        </span>
-        <Toggle on={lockOnOpen} onChange={toggleLock} label="לבקש שוב בכל פתיחה" />
-      </div>
-    </>
   );
 }
 
@@ -1201,44 +1114,9 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: T.ink2, margin: "0 0 6px" }}>{children}</label>;
 }
 
-function PinSetup({ onDone }: { onDone: () => void }) {
-  const [a, setA] = useState("");
-  const [b, setB] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function save() {
-    if (!/^\d{4}$/.test(a)) { setErr("הקוד צריך להיות 4 ספרות"); return; }
-    if (a !== b) { setErr("שני הקודים לא תואמים"); return; }
-    setBusy(true);
-    try { await setManagerPin(a); onDone(); } catch { setErr("השמירה נכשלה — בדקו חיבור"); }
-    setBusy(false);
-  }
-  const pinInput: React.CSSProperties = { ...inputStyle, width: "100%", fontSize: 22, letterSpacing: "0.5em", textAlign: "center", fontFamily: "var(--font-mono)", height: 52, direction: "ltr" };
-  return (
-    <div>
-      <p style={{ margin: "0 0 14px", fontSize: 12.5, color: T.ink2, lineHeight: 1.6 }}>
-        היומן שלך ודשבורד הצוות ייפתחו רק עם הקוד, פעם אחת בכל מכשיר. היומנים של הצוות נשארים פתוחים בלי קוד.
-      </p>
-      <FieldLabel>קוד בן 4 ספרות</FieldLabel>
-      <input type="password" inputMode="numeric" autoComplete="new-password" maxLength={4} value={a}
-        onChange={(e) => { setA(e.target.value.replace(/\D/g, "")); setErr(""); }} style={pinInput} aria-label="קוד חדש" autoFocus />
-      <div style={{ height: 10 }} />
-      <FieldLabel>שוב, לאימות</FieldLabel>
-      <input type="password" inputMode="numeric" autoComplete="new-password" maxLength={4} value={b}
-        onChange={(e) => { setB(e.target.value.replace(/\D/g, "")); setErr(""); }}
-        onKeyDown={(e) => { if (e.key === "Enter") save(); }} style={pinInput} aria-label="אימות הקוד" />
-      {err && <div role="alert" style={{ color: T.danger, fontSize: 12, marginTop: 8 }}>{err}</div>}
-      <button onClick={save} disabled={busy} style={{ ...primaryBtn, width: "100%", height: 46, marginTop: 14, borderRadius: 14 }}>
-        {Ic.lock(14)} {busy ? "שומר…" : "שמירת הקוד"}
-      </button>
-    </div>
-  );
-}
-
-function AddMemberDialog({ initialName = "", needsPin, usedColors, onClose, onCreated }: {
-  initialName?: string; needsPin: boolean; usedColors: PersonColor[]; onClose: () => void; onCreated: (m: TeamMember) => void;
+function AddMemberDialog({ initialName = "", usedColors, onClose, onCreated }: {
+  initialName?: string; usedColors: PersonColor[]; onClose: () => void; onCreated: (m: TeamMember) => void;
 }) {
-  const [step, setStep] = useState<"pin" | "details">(needsPin ? "pin" : "details");
   const [name, setName] = useState(initialName);
   const [role, setRole] = useState("");
   const [color, setColor] = useState<PersonColor>(MEMBER_COLOR_ORDER.find((c) => !usedColors.includes(c)) ?? "teal");
@@ -1249,10 +1127,7 @@ function AddMemberDialog({ initialName = "", needsPin, usedColors, onClose, onCr
     try { onCreated(await addMember(name, color, role)); } finally { setBusy(false); }
   }
   return (
-    <Sheet title={step === "pin" ? "קודם — קוד למנהל" : "הוספה לצוות"} icon={step === "pin" ? Ic.lock(16) : Ic.userPlus(16)} onClose={onClose} side="center" width={440}>
-      {step === "pin" ? (
-        <PinSetup onDone={() => setStep("details")} />
-      ) : (
+    <Sheet title="הוספה לצוות" icon={Ic.userPlus(16)} onClose={onClose} side="center" width={440}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, background: T.bg2, borderRadius: 16, padding: 12 }}>
             <Avatar name={name || "?"} color={color} size={48} ring />
@@ -1277,7 +1152,6 @@ function AddMemberDialog({ initialName = "", needsPin, usedColors, onClose, onCr
             {Ic.userPlus(15)} {busy ? "יוצר…" : "יצירת היומן"}
           </button>
         </div>
-      )}
     </Sheet>
   );
 }

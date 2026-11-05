@@ -337,13 +337,14 @@ function diffActivity(prev: Task | undefined, next: Task): ActivityEvent[] {
   return out;
 }
 
-// מכשיר שעבר את נעילת המנהל — פעולות שאופיר עושה ביומן של אשת צוות לא מעדכנות אותו עצמו
+// המכשיר של אופיר (פתח את היומן הראשי) — משמש רק לקיצור "לדשבורד הצוות"
 export function isManagerDevice(): boolean {
   try { return localStorage.getItem("ofir-manager-device") === "1"; } catch { return false; }
 }
 
+// עדכונים לאופיר נשלחים מכל מכשיר — עדיף עדכון כפול נדיר מאשר עדכון של איש צוות שהולך לאיבוד
 function postActivity(journalId: string, events: ActivityEvent[]) {
-  if (!events.length || journalId === MANAGER_ID || isManagerDevice()) return;
+  if (!events.length || journalId === MANAGER_ID) return;
   try {
     fetch("/api/activity", {
       method: "POST",

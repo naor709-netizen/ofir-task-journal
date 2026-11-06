@@ -727,7 +727,7 @@ function PaceChart({ people, stats, todayKey }: { people: Person[]; stats: Recor
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
         <span style={{ width: 30, height: 30, borderRadius: 10, background: T.accentSoft, color: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{Ic.chart(15)}</span>
         <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>משימות שהושלמו · 14 ימים</h3>
-        <span className="num" style={{ fontSize: 11.5, color: T.ink3, marginInlineStart: "auto" }}>סה״כ {total}</span>
+        <span style={{ fontSize: 11.5, color: T.ink3, marginInlineStart: "auto" }}>סה״כ <span className="num" style={{ color: T.ink, fontWeight: 700 }}>{total}</span></span>
       </div>
       {/* מקרא — הזהות לא נשענת על צבע בלבד */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
@@ -766,14 +766,16 @@ function PaceChart({ people, stats, todayKey }: { people: Person[]; stats: Recor
             return (
               <div key={day.key} onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} tabIndex={0}
                 aria-label={`${day.d.toLocaleDateString("he-IL")}: ${totals[i]} הושלמו`}
-                style={{ height: "100%", display: "flex", flexDirection: "column-reverse", gap: 2, cursor: "default", outline: "none" }}>
-                {segs.length === 0 ? (
-                  <span style={{ height: 2, borderRadius: 2, background: T.surface2 }} />
-                ) : segs.map(({ p, n }, k) => (
+                style={{
+                  height: "100%", display: "flex", flexDirection: "column-reverse", gap: 2, cursor: "default", outline: "none",
+                  // מסילה לכל יום: גם יום ריק נראה כעמודה, לא כקו
+                  background: hover === i ? alpha("var(--tj-accent)", 10) : alpha("var(--tj-ink3)", 8), borderRadius: 8, overflow: "hidden",
+                }}>
+                {segs.map(({ p, n }, k) => (
                   <span key={p.id} style={{
-                    height: `${(n / max) * (H - 18)}px`, minHeight: 3,
-                    background: personVar(p.color),
-                    borderRadius: k === segs.length - 1 ? "4px 4px 1px 1px" : 1,
+                    height: `${(n / max) * (H - 18)}px`, minHeight: 6,
+                    background: `linear-gradient(180deg, ${personVar(p.color)}, color-mix(in srgb, ${personVar(p.color)} 70%, transparent))`,
+                    borderRadius: k === segs.length - 1 ? "8px 8px 2px 2px" : 2,
                     opacity: hover === null || hover === i ? 1 : 0.45,
                     transition: "opacity .2s",
                   }} />

@@ -6,11 +6,12 @@ import { Flip } from "gsap/Flip";
 import { useGSAP } from "@gsap/react";
 import {
   type Task, type TaskCategory, type TaskStatus,
-  isDone, flattenTasks, countSubtasks, formatDateHe,
+  isDone, flattenTasks, countSubtasks, formatDateHe, toDateKey,
   STATUS_LABELS, STATUS_COLORS, NATURE_LABELS, NATURE_COLORS,
-  HE_MONTHS, HE_WEEKDAYS_FULL,
+  HE_WEEKDAYS, HE_WEEKDAYS_FULL,
 } from "@/lib/tasks";
 import { T, card, alpha, Ic, StatusIcon } from "./ui";
+import { Donut, Legend, DayBars, DayBarsLegend, Columns, SplitBars, Heatmap } from "./charts";
 
 gsap.registerPlugin(Flip, useGSAP);
 
@@ -28,18 +29,21 @@ interface ViewProps {
   onOpen: (id: string) => void;
 }
 
-function SectionCard({ title, icon, badge, children }: {
-  title: string; icon: React.ReactNode; badge?: React.ReactNode; children: React.ReactNode;
+function SectionCard({ title, icon, badge, children, extra }: {
+  title: string; icon: React.ReactNode; badge?: React.ReactNode; children: React.ReactNode; extra?: React.ReactNode;
 }) {
   return (
-    <section className="tj-card" style={{ ...card, padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
+    <section className="tj-card" style={{ ...card, padding: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
         <span style={{
-          width: 30, height: 30, borderRadius: 10, background: T.accentSoft, color: T.accent,
-          display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          width: 32, height: 32, borderRadius: 11, color: "#fff", flexShrink: 0,
+          background: "linear-gradient(140deg, var(--tj-accent), color-mix(in srgb, var(--tj-accent) 68%, #000))",
+          boxShadow: "0 8px 18px -10px color-mix(in srgb, var(--tj-accent) 90%, transparent)",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
         }}>{icon}</span>
         <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>{title}</h2>
         {badge}
+        {extra}
       </div>
       {children}
     </section>
@@ -373,42 +377,97 @@ export function BoardView({ roots, catById, todayKey, onOpen, onSetStatus }: Vie
 }
 
 // ============================================
-// StatsView — אנליטיקות
+// StatsView — אנליטיקות: דונאט, שטח, פסים, עמודות ומפת חום
 // ============================================
+
+const MONTH_SHORT = ["ינו׳", "פבר׳", "מרץ", "אפר׳", "מאי", "יוני", "יולי", "אוג׳", "ספט׳", "אוק׳", "נוב׳", "דצמ׳"];
+
+function shiftDays(key: string, d: number): string {
+  const x = new Date(`${key}T12:00:00`);
+  x.setDate(x.getDate() + d);
+  return toDateKey(x);
+}
+const dm = (key: string) => `${parseInt(key.slice(8, 10), 10)}.${parseInt(key.slice(5, 7), 10)}`;
 
 export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen">) {
   const all = useMemo(() => roots.flatMap((r) => [r, ...flattenTasks(r.subtasks)]), [roots]);
-  const [hoverMonth, setHoverMonth] = useState<number | null>(null);
 
   const total = all.length;
   const doneCount = all.filter(isDone).length;
   const pct = total ? Math.round((doneCount / total) * 100) : 0;
   const overdue = all.filter((t) => !isDone(t) && t.dueDate && t.dueDate < todayKey).length;
+  const withDue = all.filter((t) => isDone(t) && t.dueDate && t.endDate);
+  const onTime = withDue.length ? Math.round((withDue.filter((t) => t.endDate! <= t.dueDate!).length / withDue.length) * 100) : null;
 
-  // per category (all tasks incl. subtasks)
+  const byStatus = (["done", "in_progress", "todo"] as TaskStatus[]).map((s) => ({
+    key: s, label: STATUS_LABELS[s], value: all.filter((t) => t.status === s).length, color: STATUS_FILL[s],
+  }));
+
+  // לפי קטגוריה: כמה הושלמו וכמה פתוחות
   const byCat = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const t of all) if (t.categoryId) counts.set(t.categoryId, (counts.get(t.categoryId) ?? 0) + 1);
-    return [...counts.entries()]
-      .map(([id, count]) => ({ cat: catById[id], count }))
-      .filter((x) => x.cat)
-      .sort((a, b) => b.count - a.count);
-  }, [all, catById]);
-  const maxCat = Math.max(1, ...byCat.map((x) => x.count));
-
-  const byStatus = (["todo", "in_progress", "done"] as TaskStatus[])
-    .map((s) => ({ s, count: all.filter((t) => t.status === s).length }));
-
-  // per month (due dates, current year)
-  const year = new Date().getFullYear();
-  const byMonth = useMemo(() => {
-    const counts = Array(12).fill(0) as number[];
+    const m = new Map<string, { done: number; open: number }>();
     for (const t of all) {
-      if (t.dueDate?.startsWith(String(year))) counts[parseInt(t.dueDate.slice(5, 7), 10) - 1]++;
+      const k = t.categoryId && catById[t.categoryId] ? t.categoryId : "__none";
+      const e = m.get(k) ?? { done: 0, open: 0 };
+      if (isDone(t)) e.done++; else e.open++;
+      m.set(k, e);
     }
-    return counts;
-  }, [all, year]);
-  const maxMonth = Math.max(1, ...byMonth);
+    return [...m.entries()]
+      .map(([k, v]) => ({
+        key: k, ...v,
+        label: k === "__none" ? "ללא קטגוריה" : catById[k].name,
+        color: k === "__none" ? "#8A97A8" : catById[k].color,
+      }))
+      .sort((a, b) => b.done + b.open - (a.done + a.open))
+      .slice(0, 8);
+  }, [all, catById]);
+
+  // 30 הימים האחרונים: נסגרו מול נפתחו
+  const days30 = useMemo(() => Array.from({ length: 30 }, (_, i) => shiftDays(todayKey, i - 29)), [todayKey]);
+  const doneSeries = days30.map((d) => all.filter((t) => isDone(t) && t.endDate === d).length);
+  const newSeries = days30.map((d) => all.filter((t) => t.createdAt?.slice(0, 10) === d).length);
+  const done30 = doneSeries.reduce((a, b) => a + b, 0);
+  const new30 = newSeries.reduce((a, b) => a + b, 0);
+
+  // עומס לפי חודש (תאריכי יעד, השנה הנוכחית)
+  const year = parseInt(todayKey.slice(0, 4), 10);
+  const curMonth = parseInt(todayKey.slice(5, 7), 10) - 1;
+  const byMonth = MONTH_SHORT.map((label, i) => ({
+    label,
+    value: all.filter((t) => t.dueDate?.startsWith(`${year}-${String(i + 1).padStart(2, "0")}`)).length,
+  }));
+
+  // מפת חום: 12 שבועות, ראשון→שבת
+  const weeks = useMemo(() => {
+    const today = new Date(`${todayKey}T12:00:00`);
+    const start = new Date(today);
+    start.setDate(start.getDate() - today.getDay() - 7 * 11);
+    const doneByDay = new Map<string, number>();
+    for (const t of all) if (isDone(t) && t.endDate) doneByDay.set(t.endDate, (doneByDay.get(t.endDate) ?? 0) + 1);
+    return Array.from({ length: 12 }, (_, w) => Array.from({ length: 7 }, (_, d) => {
+      const x = new Date(start);
+      x.setDate(start.getDate() + w * 7 + d);
+      const key = toDateKey(x);
+      return { key, label: `${HE_WEEKDAYS_FULL[x.getDay()]} ${dm(key)}`, value: doneByDay.get(key) ?? 0, future: key > todayKey };
+    }));
+  }, [all, todayKey]);
+  const activeDays = weeks.flat().filter((d) => d.value > 0).length;
+  const heat = useMemo(() => {
+    const past = weeks.flat().filter((d) => !d.future);
+    let streak = 0, run = 0;
+    for (const d of past) { run = d.value > 0 ? run + 1 : 0; streak = Math.max(streak, run); }
+    const peakDay = past.reduce((b, d) => (d.value > b.value ? d : b), { key: "", label: "", value: 0, future: false });
+    const byWd = Array.from({ length: 7 }, (_, i) => weeks.reduce((n, w) => n + (w[i].future ? 0 : w[i].value), 0));
+    const wdMax = Math.max(...byWd);
+    const wd = wdMax > 0 ? byWd.indexOf(wdMax) : -1;
+    return {
+      streak,
+      peak: peakDay.value,
+      peakLabel: peakDay.value ? peakDay.label : undefined,
+      bestWeekday: wd >= 0 ? `יום ${HE_WEEKDAYS_FULL[wd]}` : null,
+      bestWeekdayCount: wdMax,
+    };
+  }, [weeks]);
 
   if (total === 0) {
     return (
@@ -418,126 +477,119 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
     );
   }
 
-  const ringR = 26, ringC = 2 * Math.PI * ringR;
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* hero tiles */}
-      <div className="tj-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-        <div style={{ ...card, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-          <svg width="60" height="60" viewBox="0 0 60 60" style={{ flexShrink: 0 }}>
-            <circle cx="30" cy="30" r={ringR} fill="none" stroke={T.surface2} strokeWidth="6" />
-            <circle cx="30" cy="30" r={ringR} fill="none" stroke={STATUS_FILL.done} strokeWidth="6"
-              strokeLinecap="round" strokeDasharray={`${(pct / 100) * ringC} ${ringC}`}
-              transform="rotate(-90 30 30)" />
-            <text x="30" y="34" textAnchor="middle" fill={T.ink} fontSize="13" fontWeight="700" fontFamily="var(--font-mono)">{pct}%</text>
-          </svg>
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink }}>הושלמו</div>
-            <div className="num" style={{ fontSize: 11, color: T.ink3 }}>{doneCount} מתוך {total}</div>
+      <div className="tj-stat-top" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr)", gap: 14 }}>
+        <SectionCard title="מצב המשימות" icon={Ic.checkCircle(16)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
+            <Donut
+              slices={byStatus}
+              ariaLabel={`${pct}% מהמשימות הושלמו`}
+              center={<span className="num" style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: T.ink }}>{pct}%</span>}
+              sub="הושלמו"
+            />
+            <div style={{ flex: 1, minWidth: 150 }}>
+              <Legend items={byStatus.map((s) => ({ label: s.label, color: s.color, value: s.value }))} />
+              <div style={{ marginTop: 12, fontSize: 12, color: T.ink3 }}>
+                <span className="num" style={{ color: T.ink, fontWeight: 700 }}>{total}</span> משימות ושלבים בסך הכל
+              </div>
+            </div>
           </div>
+        </SectionCard>
+        <div className="tj-stat-kpis" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <BigStat label="הושלמו" value={doneCount} tone="mint" icon={Ic.checkCircle(17)} />
+          <BigStat label="פעילות" value={total - doneCount} tone="accent" icon={Ic.layers(17)} />
+          <BigStat label="באיחור" value={overdue} tone={overdue ? "danger" : "mint"} icon={Ic.alert(17)} />
+          <BigStat label="הושלמו בזמן" value={onTime === null ? "—" : `${onTime}%`} tone="amber" icon={Ic.target(17)} />
         </div>
-        <StatTile label="סה״כ משימות ושלבים" value={total} />
-        <StatTile label="פעילות" value={total - doneCount} />
-        <StatTile label="באיחור" value={overdue} danger={overdue > 0} />
       </div>
 
-      {/* status stacked bar */}
-      <SectionCard title="התפלגות סטטוס" icon={Ic.chart(16)}>
-        <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", gap: 2, background: T.surface }}>
-          {byStatus.filter((x) => x.count > 0).map(({ s, count }) => (
-            <div key={s} title={`${STATUS_LABELS[s]}: ${count}`}
-              style={{ width: `${(count / total) * 100}%`, background: STATUS_FILL[s], minWidth: 4 }} />
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 18, marginTop: 12, flexWrap: "wrap" }}>
-          {byStatus.map(({ s, count }) => (
-            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.ink2 }}>
-              <span style={{ color: STATUS_COLORS[s], display: "inline-flex" }}><StatusIcon status={s} size={13} /></span>
-              {STATUS_LABELS[s]}
-              <span className="num" style={{ color: T.ink }}>{count}</span>
-            </span>
-          ))}
-        </div>
+      <SectionCard title="קצב — 30 הימים האחרונים" icon={Ic.activity(16)}
+        extra={<div style={{ marginInlineStart: "auto" }}><DayBarsLegend items={[
+          { label: "נסגרו", color: STATUS_FILL.done, total: done30 },
+          { label: "נפתחו", color: "var(--tj-accent)", total: new30 },
+        ]} /></div>}>
+        <DayBars
+          days={days30.map((d) => ({ short: dm(d), long: `${HE_WEEKDAYS_FULL[new Date(`${d}T12:00:00`).getDay()]} ${dm(d)}` }))}
+          up={{ label: "נסגרו", color: STATUS_FILL.done, values: doneSeries }}
+          down={{ label: "נפתחו", color: "var(--tj-accent)", values: newSeries }}
+          ariaLabel={`ב-30 הימים האחרונים נסגרו ${done30} משימות ונפתחו ${new30}`}
+        />
       </SectionCard>
 
       <div className="tj-statgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
-        {/* by category — horizontal bars */}
-        <SectionCard title="משימות לפי קטגוריה" icon={Ic.layers(16)}>
+        <SectionCard title="לפי קטגוריה" icon={Ic.layers(16)}>
           {byCat.length === 0 ? (
-            <div style={{ color: T.ink3, fontSize: 12, padding: 10 }}>אין משימות עם קטגוריה</div>
+            <div style={{ color: T.ink3, fontSize: 12, padding: 10 }}>אין משימות</div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {byCat.map(({ cat, count }) => (
-                <div key={cat.id} style={{ display: "grid", gridTemplateColumns: "84px 1fr 30px", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 11.5, color: T.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "start" }}>
-                    {cat.name}
-                  </span>
-                  <div style={{ height: 10, borderRadius: 5, background: T.bg2, overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%", width: `${(count / maxCat) * 100}%`,
-                      background: cat.color, borderRadius: 5,
-                    }} />
-                  </div>
-                  <span className="num" style={{ fontSize: 11.5, color: T.ink, textAlign: "start" }}>{count}</span>
-                </div>
-              ))}
-            </div>
+            <>
+              <SplitBars rows={byCat} />
+              <div style={{ display: "flex", gap: 14, marginTop: 12, fontSize: 11, color: T.ink3 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: T.ink2 }} />הושלמו</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: alpha("var(--tj-ink2)", 28) }} />פתוחות</span>
+              </div>
+            </>
           )}
         </SectionCard>
-
-        {/* monthly load — vertical bars */}
         <SectionCard title={`עומס לפי חודש · ${year}`} icon={Ic.calendar(16)}>
-          <div style={{ position: "relative" }}>
-            {hoverMonth !== null && byMonth[hoverMonth] > 0 && (
-              <div style={{
-                position: "absolute", top: -6, insetInlineStart: `${(hoverMonth / 12) * 100}%`,
-                background: T.surface2, border: `1px solid ${T.lineStrong}`, borderRadius: 8,
-                padding: "4px 10px", fontSize: 11, color: T.ink, whiteSpace: "nowrap", zIndex: 2,
-                transform: "translateY(-100%)",
-              }}>
-                {HE_MONTHS[hoverMonth]} · <span className="num">{byMonth[hoverMonth]}</span> משימות
-              </div>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(12,1fr)", gap: 4, alignItems: "end", height: 120, marginTop: 14 }}>
-              {byMonth.map((count, i) => (
-                <div key={i}
-                  onMouseEnter={() => setHoverMonth(i)}
-                  onMouseLeave={() => setHoverMonth(null)}
-                  style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%", cursor: "default" }}>
-                  {count === maxMonth && count > 0 && (
-                    <span className="num" style={{ fontSize: 9.5, color: T.ink2, marginBottom: 3 }}>{count}</span>
-                  )}
-                  <div style={{
-                    width: "70%", maxWidth: 22,
-                    height: `${(count / maxMonth) * 88}%`,
-                    minHeight: count > 0 ? 4 : 1,
-                    background: count > 0 ? (hoverMonth === i ? `color-mix(in srgb, ${T.accent} 75%, var(--tj-chipmix))` : T.accent) : T.surface2,
-                    borderRadius: "4px 4px 0 0",
-                  }} />
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(12,1fr)", gap: 4, marginTop: 6 }}>
-              {byMonth.map((_, i) => (
-                <span key={i} className="num" style={{ fontSize: 8.5, color: T.ink3, textAlign: "center" }}>
-                  {i + 1}
-                </span>
-              ))}
-            </div>
-          </div>
+          <Columns items={byMonth} highlight={curMonth} height={214} ariaLabel={`משימות לפי חודש יעד בשנת ${year}`} />
         </SectionCard>
       </div>
-      <style>{`@media (max-width: 900px) { .tj-statgrid { grid-template-columns: 1fr !important; } }`}</style>
+
+      <SectionCard title="מפת פעילות — 12 שבועות" icon={Ic.grid(16)}
+        badge={<span style={{ fontSize: 11.5, fontWeight: 700, color: T.mint, background: T.mintSoft, borderRadius: 99, padding: "2px 10px" }}><span className="num">{activeDays}</span> ימים פעילים</span>}>
+        <div className="tj-heat" style={{ display: "flex", gap: 22, alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+            <Heatmap weeks={weeks} dayLabels={HE_WEEKDAYS} color={STATUS_FILL.done} todayKey={todayKey}
+              ariaLabel={`השלמות לפי יום ב-12 השבועות האחרונים: ${activeDays} ימים עם השלמות`} />
+          </div>
+          <div className="tj-heat-side" style={{ flex: "0 0 210px", display: "grid", gap: 8 }}>
+            <MiniStat label="היום החזק בשבוע" value={heat.bestWeekday ?? "—"} sub={heat.bestWeekday ? `${heat.bestWeekdayCount} השלמות` : undefined} />
+            <MiniStat label="רצף הכי ארוך" value={<><span className="num">{heat.streak}</span> ימים</>} sub="ימים רצופים עם השלמה" />
+            <MiniStat label="שיא ביום אחד" value={<><span className="num">{heat.peak}</span> משימות</>} sub={heat.peakLabel} />
+          </div>
+        </div>
+      </SectionCard>
+
+      <style>{`
+        @media (max-width: 900px) { .tj-statgrid, .tj-stat-top { grid-template-columns: 1fr !important; } }
+        @media (max-width: 720px) {
+          .tj-heat { flex-direction: column; align-items: stretch !important; }
+          .tj-heat-side { flex: 1 1 auto !important; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+      `}</style>
     </div>
   );
 }
 
-function StatTile({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
+function MiniStat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div style={{ ...card, padding: "12px 14px" }}>
-      <div className="num" style={{ fontSize: 22, fontWeight: 700, color: danger ? T.danger : T.ink }}>{value}</div>
-      <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>{label}</div>
+    <div style={{ borderRadius: 14, padding: "10px 12px", background: T.bg2, border: `1px solid ${T.line}`, minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: T.ink3, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 800, color: T.ink, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: T.ink3, marginTop: 1, lineHeight: 1.35 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function BigStat({ label, value, tone, icon }: { label: string; value: number | string; tone: "mint" | "accent" | "danger" | "amber"; icon: React.ReactNode }) {
+  const c = tone === "mint" ? "var(--tj-mint)" : tone === "danger" ? "var(--tj-danger)" : tone === "amber" ? "var(--tj-amber)" : "var(--tj-accent)";
+  return (
+    <div className="tj-card" style={{
+      ...card, padding: "16px 16px 14px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10,
+      background: `linear-gradient(150deg, ${alpha(c, 14)} 0%, ${alpha(c, 3)} 70%), var(--tj-surface)`,
+      border: `1px solid ${alpha(c, 20)}`,
+    }}>
+      <span style={{
+        width: 38, height: 38, borderRadius: 12, color: "#fff",
+        background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 68%, #000))`,
+        boxShadow: `0 10px 20px -10px ${alpha(c, 90)}`,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}>{icon}</span>
+      <span>
+        <span className="num" style={{ display: "block", fontSize: 32, fontWeight: 800, lineHeight: 1, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
+        <span style={{ display: "block", fontSize: 12.5, color: T.ink2, fontWeight: 600, marginTop: 4 }}>{label}</span>
+      </span>
     </div>
   );
 }

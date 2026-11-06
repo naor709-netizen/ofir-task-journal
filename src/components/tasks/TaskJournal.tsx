@@ -25,6 +25,7 @@ import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 import { NotifyCenter } from "./NotifyCenter";
 import { TeamView, TeamStrip } from "./TeamView";
+import { Donut, Legend, DayBars, DayBarsLegend } from "./charts";
 
 gsap.registerPlugin(useGSAP);
 
@@ -919,6 +920,9 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                     )}
                   </section>
 
+                  {/* השבוע שלך — גרף שטח של 14 ימים + דונאט פתוחות לפי קטגוריה */}
+                  <WeekInsights allFlat={allFlat} catById={catById} todayKey={todayKey} />
+
                   {/* המשימות שהושלמו — רשימה מרוכזת מתחת ללוח השנה (בקשה של אופיר) */}
                   <section className="tj-card" style={{ ...card, padding: 16, marginTop: 14 }}>
                     <SectionHead icon={Ic.checkCircle(15)} title="הושלמו" count={doneTasks.length} tone="mint" tight={doneTasks.length === 0} />
@@ -1154,6 +1158,80 @@ function Header({ sync, onSyncClick, personName, personColor, isManager, teamCou
       </div>
       <style>{`@media (max-width: 640px) { .tj-brandtext { display: none; } .tj-header { padding: 9px 12px !important; } }`}</style>
     </header>
+  );
+}
+
+// ---- השבוע שלך: מה נסגר ומה נפתח, ולאן הולכות המשימות הפתוחות ----
+function WeekInsights({ allFlat, catById, todayKey }: { allFlat: Task[]; catById: Record<string, TaskCategory>; todayKey: string }) {
+  const days = useMemo(() => Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(`${todayKey}T12:00:00`);
+    d.setDate(d.getDate() - (13 - i));
+    return toDateKey(d);
+  }), [todayKey]);
+  const doneSeries = days.map((d) => allFlat.filter((t) => isDone(t) && t.endDate === d).length);
+  const newSeries = days.map((d) => allFlat.filter((t) => t.createdAt?.slice(0, 10) === d).length);
+  const doneWeek = doneSeries.slice(-7).reduce((a, b) => a + b, 0);
+  const prevWeek = doneSeries.slice(0, 7).reduce((a, b) => a + b, 0);
+  const trend = doneWeek - prevWeek;
+
+  const open = allFlat.filter((t) => !isDone(t));
+  const counts = new Map<string, number>();
+  for (const t of open) {
+    const k = t.categoryId && catById[t.categoryId] ? t.categoryId : "__none";
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const top = sorted.slice(0, 4);
+  const rest = sorted.slice(4).reduce((n, [, v]) => n + v, 0);
+  const slices = [
+    ...top.map(([k, v]) => ({
+      key: k, value: v,
+      label: k === "__none" ? "ללא קטגוריה" : catById[k].name,
+      color: k === "__none" ? "#8A97A8" : catById[k].color,
+    })),
+    ...(rest ? [{ key: "__rest", value: rest, label: "אחרות", color: "#B7C2D0" }] : []),
+  ];
+  const dm = (k: string) => `${parseInt(k.slice(8, 10), 10)}.${parseInt(k.slice(5, 7), 10)}`;
+
+  return (
+    <section className="tj-card" style={{ ...card, padding: 16, marginTop: 14 }}>
+      <SectionHead icon={Ic.chart(15)} title="השבוע שלך" extra={
+        <span style={{
+          marginInlineStart: "auto", fontSize: 11.5, fontWeight: 700, borderRadius: 99, padding: "3px 10px",
+          color: trend >= 0 ? T.mint : T.amber, background: trend >= 0 ? T.mintSoft : T.amberSoft,
+        }}>
+          <span className="num">{doneWeek}</span> נסגרו השבוע
+          {trend !== 0 && <> · {trend > 0 ? "▲" : "▼"} <span className="num">{Math.abs(trend)}</span> משבוע שעבר</>}
+        </span>
+      } />
+      {open.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+          <Donut
+            slices={slices}
+            size={124} thickness={17}
+            ariaLabel={`${open.length} משימות פתוחות לפי קטגוריה`}
+            center={<span className="num" style={{ fontSize: 26, fontWeight: 800, lineHeight: 1, color: T.ink }}>{open.length}</span>}
+            sub="פתוחות"
+          />
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <Legend items={slices.map((x) => ({ label: x.label, color: x.color, value: x.value }))} />
+          </div>
+        </div>
+      )}
+      <DayBars
+        height={170}
+        days={days.map((d) => ({ short: dm(d), long: `${HE_WEEKDAYS_FULL[new Date(`${d}T12:00:00`).getDay()]} ${dm(d)}` }))}
+        up={{ label: "נסגרו", color: "var(--tj-mint)", values: doneSeries }}
+        down={{ label: "נפתחו", color: "var(--tj-accent)", values: newSeries }}
+        ariaLabel={`ב-14 הימים האחרונים נסגרו ${doneSeries.reduce((x, y) => x + y, 0)} משימות ונפתחו ${newSeries.reduce((x, y) => x + y, 0)}`}
+      />
+      <div style={{ marginTop: 8 }}>
+        <DayBarsLegend items={[
+          { label: "נסגרו", color: "var(--tj-mint)", total: doneSeries.reduce((x, y) => x + y, 0) },
+          { label: "נפתחו", color: "var(--tj-accent)", total: newSeries.reduce((x, y) => x + y, 0) },
+        ]} />
+      </div>
+    </section>
   );
 }
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireEnv, db, flatten, notifyJournal, escHtml, appUrl, type Task } from "@/lib/server/automation";
 import { tgConfigured } from "@/lib/server/telegram";
 import { smsConfigured, smsText } from "@/lib/server/sms";
-import { journalOfPayload, journalPath } from "@/lib/journals";
+import { participantsOfPayload, journalPath } from "@/lib/journals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,16 +41,17 @@ export async function POST(req: Request) {
   const { data: rows, error: tErr } = await sb.from("journal_tasks").select("payload");
   if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
 
-  const due: { reminderId: string; journalId: string; task: Task; note: string }[] = [];
+  const due: { reminderId: string; journalIds: string[]; task: Task; note: string }[] = [];
   for (const row of (rows ?? []) as { payload: Task }[]) {
     if (!row.payload) continue;
-    const journalId = journalOfPayload(row.payload);
+    // משימה משותפת: התזכורת קופצת אצל כל השותפים
+    const journalIds = participantsOfPayload(row.payload);
     for (const t of flatten([row.payload])) {
       if (t.status === "done") continue; // משימה שכבר נסגרה לא מנדנדת
       for (const r of t.reminders ?? []) {
         const ts = r.datetime ? new Date(r.datetime).getTime() : NaN;
         if (!isNaN(ts) && ts <= now && ts >= windowStart) {
-          due.push({ reminderId: r.id, journalId, task: t, note: r.note });
+          due.push({ reminderId: r.id, journalIds, task: t, note: r.note });
         }
       }
     }
@@ -78,26 +79,28 @@ export async function POST(req: Request) {
       body !== "תזכורת מהיומן" ? escHtml(body) : "",
       rem.task.critical ? "🔴 קריטית" : "",
     ].filter(Boolean).join("\n");
-    const out = await notifyJournal(
-      sb, rem.journalId,
-      { title, body, tag: rem.reminderId, url: journalPath(rem.journalId) },
-      {
-        sms: smsText(`⏰ ${title}`, body !== "תזכורת מהיומן" ? body : rem.task.critical ? "קריטית" : ""),
-        telegram: {
-          html,
-          buttons: [
-            [
-              { text: "✓ בוצע", callback_data: `d:${rem.task.id}` },
-              { text: "⏰ עוד שעה", callback_data: `s:${rem.task.id}` },
+    for (const journalId of rem.journalIds) {
+      const out = await notifyJournal(
+        sb, journalId,
+        { title, body, tag: rem.reminderId, url: journalPath(journalId) },
+        {
+          sms: smsText(`⏰ ${title}`, body !== "תזכורת מהיומן" ? body : rem.task.critical ? "קריטית" : ""),
+          telegram: {
+            html,
+            buttons: [
+              [
+                { text: "✓ בוצע", callback_data: `d:${rem.task.id}` },
+                { text: "⏰ עוד שעה", callback_data: `s:${rem.task.id}` },
+              ],
+              [{ text: "פתיחת היומן", url: `${appUrl()}${journalPath(journalId)}` }],
             ],
-            [{ text: "פתיחת היומן", url: `${appUrl()}${journalPath(rem.journalId)}` }],
-          ],
-        },
-      }
-    );
-    pushed += out.pushed;
-    if (out.telegram === "sent") telegram++;
-    if (out.sms === "sent") sms++;
+          },
+        }
+      );
+      pushed += out.pushed;
+      if (out.telegram === "sent") telegram++;
+      if (out.sms === "sent") sms++;
+    }
   }
 
   return NextResponse.json({ sent: pushed + telegram + sms, pushed, sms, telegram, reminders: toSend.length });

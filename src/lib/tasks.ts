@@ -5,7 +5,7 @@
 // localStorage cache + Supabase cloud sync (optional)
 // ============================================
 
-import { MANAGER_ID, metaKey, journalOfPayload, rowPayload } from "./journals";
+import { MANAGER_ID, metaKey, journalOfPayload, rowPayload, payloadVisibleIn, sharedWithOfPayload } from "./journals";
 
 export type TaskNature = "personal" | "urgent" | "routine";
 export type TaskStatus = "todo" | "in_progress" | "done";
@@ -73,6 +73,11 @@ export interface Task {
   subtasks: Task[]; // שלבים — לכל שלב כל מאפייני משימה
   assignedBy?: string | null; // מזהה היומן שהקצה את המשימה (אופיר → אשת צוות)
   assignedAt?: string | null;
+  // --- משימה משותפת (ראו journals.ts) ---
+  sharedWith?: string[]; // יומנים נוספים שהמשימה מופיעה בהם (משימת שורש בלבד)
+  sharedCats?: Record<string, string | null>; // הקטגוריה האישית של כל שותף, לפי יומן
+  ownerId?: string; // בצד הלקוח בלבד: היומן שהמשימה שייכת לו, כשהוא לא היומן שמציג אותה
+  ownerCat?: string | null; // בצד הלקוח בלבד: הקטגוריה אצל הבעלים — נשמרת כמו שהיא
 }
 
 export interface JournalData {
@@ -153,6 +158,59 @@ export function normalizeTask(t: LegacyTask): Task {
     reminders: (t.reminders ?? []).map((r) => ({ ...r, datetime: normalizeReminderDatetime(r.datetime) })),
     subtasks: (t.subtasks ?? []).map(normalizeTask),
   };
+}
+
+// ============================================
+// משימות משותפות — תרגום בין השורה בענן לבין מה שכל יומן רואה
+// לכל אחד מערכת קטגוריות משלו, ולכן אצל שותף categoryId הוא הקטגוריה האישית שלו
+// (sharedCats[היומן שלו]), והקטגוריה של הבעלים נשמרת בצד ב-ownerCat.
+// ============================================
+
+function toViewer(t: Task, viewer: string, viewerCats: Set<string> | null): Task {
+  const own = t.sharedCats && viewer in t.sharedCats
+    ? t.sharedCats[viewer]
+    // עוד לא בחר/ה קטגוריה: אם יש אצלו/ה קטגוריה עם אותו מזהה (ברירות המחדל) — משתמשים בה
+    : t.categoryId && viewerCats?.has(t.categoryId) ? t.categoryId : null;
+  return { ...t, ownerCat: t.categoryId, categoryId: own ?? null, subtasks: t.subtasks.map((x) => toViewer(x, viewer, viewerCats)) };
+}
+
+function fromViewer(t: Task, viewer: string): Task {
+  const { ownerCat, ...rest } = t;
+  return {
+    ...rest,
+    categoryId: ownerCat ?? null,
+    sharedCats: { ...(t.sharedCats ?? {}), [viewer]: t.categoryId },
+    subtasks: t.subtasks.map((x) => fromViewer(x, viewer)),
+  };
+}
+
+// שורה מהענן → המשימה כפי שהיא נראית ביומן viewer
+export function taskFromRow(
+  payload: LegacyTask & { journalId?: string },
+  viewer: string,
+  viewerCats: Set<string> | null = null
+): Task {
+  const owner = journalOfPayload(payload);
+  const t = normalizeTask(payload);
+  delete t.ownerId;
+  delete t.ownerCat;
+  const shared = sharedWithOfPayload(payload);
+  if (shared.length) t.sharedWith = shared; else delete t.sharedWith;
+  return owner === viewer ? t : { ...toViewer(t, viewer, viewerCats), ownerId: owner };
+}
+
+// המשימה כפי שהיא ביומן viewer → מה שנשמר בשורה (תמיד אצל הבעלים)
+export function taskToRow(t: Task, viewer: string): Task & { journalId?: string } {
+  const base = t.ownerId ? { ...fromViewer(t, viewer), ownerId: t.ownerId } : t;
+  const row = rowPayload(base, viewer);
+  if (!row.sharedWith?.length) delete row.sharedWith;
+  return row;
+}
+
+// האם המשימה משותפת, ועם מי — מנקודת המבט של היומן שמציג אותה
+export function sharedPartners(t: Task, viewer: string): string[] {
+  const all = [t.ownerId ?? viewer, ...(t.sharedWith ?? [])];
+  return [...new Set(all)].filter((x) => x !== viewer);
 }
 
 // המרות בין ISO (אחסון) לבין ערך שדה datetime-local (תצוגה מקומית)
@@ -271,6 +329,8 @@ function setSyncState(s: SyncState) {
 let remote = false;
 const dirtyRoots = new Set<string>();
 const deletedRoots = new Set<string>();
+// משימה ששותפה איתי ומחקתי אצלי: לא נמחקת — רק יורדת מהיומן שלי ונשארת אצל הבעלים
+const leftRoots = new Map<string, Task>();
 let catsDirty = false;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 // המצב האחרון שידוע שנמצא בענן — בסיס לזיהוי "הושלמה"/"נוספה" עבור עדכוני המנהל
@@ -285,6 +345,7 @@ export function setActiveJournal(id: string) {
   snapshot = null;
   dirtyRoots.clear();
   deletedRoots.clear();
+  leftRoots.clear();
   cloudRoots.clear();
   catsDirty = false;
   if (pushTimer) clearTimeout(pushTimer);
@@ -308,10 +369,12 @@ export function setJournalData(next: JournalData): boolean {
       const p = prevMap.get(t.id);
       if (!p || JSON.stringify(p) !== JSON.stringify(t)) dirtyRoots.add(t.id);
       deletedRoots.delete(t.id);
+      leftRoots.delete(t.id);
     }
-    for (const id of prevMap.keys()) {
+    for (const [id, p] of prevMap) {
       if (!nextIds.has(id)) {
-        deletedRoots.add(id);
+        if (p.ownerId) leftRoots.set(id, p);
+        else deletedRoots.add(id);
         dirtyRoots.delete(id);
       }
     }
@@ -323,7 +386,7 @@ export function setJournalData(next: JournalData): boolean {
   return ok;
 }
 
-export type ActivityEvent = { type: "done" | "new"; taskId: string; rootId: string };
+export type ActivityEvent = { type: "done" | "new" | "shared"; taskId: string; rootId: string };
 
 // מה השתנה בעץ משימה מאז הגרסה שבענן: משימות/שלבים חדשים עם שם, ומעברים ל"הושלם"
 function diffActivity(prev: Task | undefined, next: Task): ActivityEvent[] {
@@ -334,6 +397,11 @@ function diffActivity(prev: Task | undefined, next: Task): ActivityEvent[] {
     if (t.title.trim() && (!p || !p.title.trim()) && !t.assignedBy) out.push({ type: "new", taskId: t.id, rootId: next.id });
     if (p && p.status !== "done" && t.status === "done") out.push({ type: "done", taskId: t.id, rootId: next.id });
   }
+  // שותף/ה חדש/ה למשימה → מקבל/ת עדכון לטלפון
+  const sharedBefore = new Set(prev && prev.title.trim() ? prev.sharedWith ?? [] : []);
+  if (next.title.trim() && (next.sharedWith ?? []).some((x) => !sharedBefore.has(x))) {
+    out.push({ type: "shared", taskId: next.id, rootId: next.id });
+  }
   return out;
 }
 
@@ -343,8 +411,12 @@ export function isManagerDevice(): boolean {
 }
 
 // עדכונים לאופיר נשלחים מכל מכשיר — עדיף עדכון כפול נדיר מאשר עדכון של איש צוות שהולך לאיבוד
-function postActivity(journalId: string, events: ActivityEvent[]) {
-  if (!events.length || journalId === MANAGER_ID) return;
+function postActivity(journalId: string, all: ActivityEvent[], sharedRoots: Set<string>) {
+  // אופיר לא מעדכן את עצמו — מהיומן שלו יוצאים רק עדכונים על משימות משותפות, לשותפים
+  const events = journalId === MANAGER_ID
+    ? all.filter((e) => e.type !== "new" && sharedRoots.has(e.rootId))
+    : all;
+  if (!events.length) return;
   try {
     fetch("/api/activity", {
       method: "POST",
@@ -360,15 +432,20 @@ async function flushPush() {
   const journal = activeJournal;
   if (!snap || !remote) return;
   const roots = snap.tasks.filter((t) => dirtyRoots.has(t.id));
-  const upserts = roots.map((t) => ({
-    id: t.id,
-    payload: rowPayload(t, journal),
-    updated_at: new Date().toISOString(),
-  }));
+  const upserts = [
+    ...roots.map((t) => ({ id: t.id, payload: taskToRow(t, journal), updated_at: new Date().toISOString() })),
+    // ירדתי ממשימה משותפת: השורה נשארת אצל הבעלים, רק בלי היומן שלי
+    ...[...leftRoots.values()].map((t) => ({
+      id: t.id,
+      payload: taskToRow({ ...t, sharedWith: (t.sharedWith ?? []).filter((x) => x !== journal) }, journal),
+      updated_at: new Date().toISOString(),
+    })),
+  ];
   const dels = [...deletedRoots];
   const cats = catsDirty ? snap.categories : null;
   dirtyRoots.clear();
   deletedRoots.clear();
+  leftRoots.clear();
   catsDirty = false;
   if (!upserts.length && !dels.length && !cats) return;
   setSyncState("syncing");
@@ -379,7 +456,7 @@ async function flushPush() {
       if (error) throw error;
       const events = roots.flatMap((t) => diffActivity(cloudRoots.get(t.id), t));
       roots.forEach((t) => cloudRoots.set(t.id, t));
-      postActivity(journal, events);
+      postActivity(journal, events, new Set(roots.filter((t) => t.ownerId || t.sharedWith?.length).map((t) => t.id)));
     }
     if (dels.length) {
       const { error } = await supabase.from("journal_tasks").delete().in("id", dels);
@@ -450,14 +527,16 @@ export async function initJournalSync() {
 
 type Row = { id: string; payload: LegacyTask & { journalId?: string } };
 
-// שורות של יומן אחד. משימות ישנות (בלי journalId) שייכות לאופיר.
+// שורות של יומן אחד: שלו, ועוד משימות ששותפו איתו מיומן אחר.
+// משימות ישנות (בלי journalId) שייכות לאופיר.
 export async function fetchJournalRows(journal: string): Promise<Row[]> {
   const { supabase } = await import("./supabase");
-  let q = supabase.from("journal_tasks").select("id,payload");
-  q = journal === MANAGER_ID
-    ? q.or(`payload->>journalId.is.null,payload->>journalId.eq.${MANAGER_ID}`)
-    : q.eq("payload->>journalId", journal);
-  let { data, error } = await q;
+  // "כל שורה משותפת" נמשכת מהשרת (מעטות), והשיוך ליומן הזה נבדק כאן למטה
+  const mine = journal === MANAGER_ID
+    ? `payload->>journalId.is.null,payload->>journalId.eq.${MANAGER_ID}`
+    : `payload->>journalId.eq.${journal}`;
+  let { data, error } = await supabase.from("journal_tasks").select("id,payload")
+    .or(`${mine},payload->>sharedWith.not.is.null`);
   if (error) {
     // רשת ביטחון: אם השרת דוחה את סינון ה-JSON — מושכים הכל ומסננים כאן,
     // כדי שהיומן לעולם לא ייפול ל"מקומי בלבד" בגלל תחביר
@@ -465,7 +544,7 @@ export async function fetchJournalRows(journal: string): Promise<Row[]> {
     if (error) throw error;
   }
   // הגנה כפולה: גם אם הסינון בשרת לא הופעל, לא מערבבים יומנים
-  return ((data ?? []) as Row[]).filter((r) => journalOfPayload(r.payload) === journal);
+  return ((data ?? []) as Row[]).filter((r) => r.payload && payloadVisibleIn(r.payload, journal));
 }
 
 async function fetchCloud(journal: string): Promise<{ categories: TaskCategory[] | null; tasks: Task[] }> {
@@ -477,8 +556,9 @@ async function fetchCloud(journal: string): Promise<{ categories: TaskCategory[]
   ]);
   if (metaRes.error) throw metaRes.error;
   const catsRow = (metaRes.data ?? [])[0] as { payload: TaskCategory[] } | undefined;
+  const catIds = new Set((catsRow?.payload ?? DEFAULT_CATEGORIES).map((c) => c.id));
   const tasks = rows
-    .map((r) => normalizeTask(r.payload))
+    .map((r) => taskFromRow(r.payload, journal, catIds))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return {
     categories: catsRow ? catsRow.payload.map((c) => ({ parentId: null, ...c })) : null,
@@ -495,7 +575,7 @@ function scheduleRefetch() {
 
 async function refetchCloud() {
   // שינויים מקומיים בהמתנה — הם יידחפו ואז נקבל אירוע חדש
-  if (dirtyRoots.size || deletedRoots.size || catsDirty) return;
+  if (dirtyRoots.size || deletedRoots.size || leftRoots.size || catsDirty) return;
   const journal = activeJournal;
   try {
     const cloud = await fetchCloud(journal);

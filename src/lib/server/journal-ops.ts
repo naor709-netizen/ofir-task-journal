@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MANAGER_ID, journalOfPayload, rowPayload } from "@/lib/journals";
+import { MANAGER_ID, journalOfPayload, rowPayload, payloadVisibleIn } from "@/lib/journals";
 import { dateKey, isDone, flatten, type Task } from "./automation";
 
 // ============================================================
@@ -8,18 +8,19 @@ import { dateKey, isDone, flatten, type Task } from "./automation";
 
 export type Row = { id: string; payload: Task };
 
+// השורות שיומן רואה: שלו, ועוד משימות ששותפו איתו מיומן אחר
 export async function journalRows(sb: SupabaseClient, journalId: string): Promise<Row[]> {
-  let q = sb.from("journal_tasks").select("id,payload");
-  q = journalId === MANAGER_ID
-    ? q.or(`payload->>journalId.is.null,payload->>journalId.eq.${MANAGER_ID}`)
-    : q.eq("payload->>journalId", journalId);
-  let { data, error } = await q;
+  const mine = journalId === MANAGER_ID
+    ? `payload->>journalId.is.null,payload->>journalId.eq.${MANAGER_ID}`
+    : `payload->>journalId.eq.${journalId}`;
+  let { data, error } = await sb.from("journal_tasks").select("id,payload")
+    .or(`${mine},payload->>sharedWith.not.is.null`);
   if (error) {
     // רשת ביטחון: סינון JSON שנדחה → מושכים הכל ומסננים כאן
     ({ data, error } = await sb.from("journal_tasks").select("id,payload"));
     if (error) throw error;
   }
-  return ((data ?? []) as Row[]).filter((r) => r.payload && journalOfPayload(r.payload) === journalId);
+  return ((data ?? []) as Row[]).filter((r) => r.payload && payloadVisibleIn(r.payload, journalId));
 }
 
 export function findInTree(root: Task, id: string): Task | null {
@@ -40,10 +41,11 @@ export function findRootOf(rows: Row[], taskId: string): Row | null {
   return rows.find((r) => findInTree(r.payload, taskId)) ?? null;
 }
 
-export async function saveRoot(sb: SupabaseClient, journalId: string, root: Task) {
+// השורה נשארת תמיד אצל הבעלים שלה — גם כשמי שמעדכן הוא שותף למשימה משותפת
+export async function saveRoot(sb: SupabaseClient, root: Task) {
   const { error } = await sb.from("journal_tasks").upsert({
     id: root.id,
-    payload: rowPayload(root, journalId),
+    payload: rowPayload(root, journalOfPayload(root)),
     updated_at: new Date().toISOString(),
   });
   if (error) throw error;
@@ -56,7 +58,7 @@ export async function markTaskDone(sb: SupabaseClient, journalId: string, taskId
   const t = findInTree(row.payload, taskId)!;
   if (isDone(t)) return t;
   const patched = patchInTree(row.payload, taskId, { status: "done", endDate: t.endDate ?? dateKey() });
-  await saveRoot(sb, journalId, patched);
+  await saveRoot(sb, patched);
   return findInTree(patched, taskId);
 }
 
@@ -68,7 +70,7 @@ export async function snoozeTask(sb: SupabaseClient, journalId: string, taskId: 
   const at = new Date(Date.now() + minutes * 60000).toISOString();
   const reminder = { id: `${taskId}-snz-${Date.now().toString(36)}`, datetime: at, note: "", fired: false };
   const patched = patchInTree(row.payload, taskId, { reminders: [...(t.reminders ?? []), reminder] });
-  await saveRoot(sb, journalId, patched);
+  await saveRoot(sb, patched);
   return t;
 }
 

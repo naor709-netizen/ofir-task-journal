@@ -150,7 +150,8 @@ async function onCallback(sb: SupabaseClient, q: NonNullable<TgUpdate["callback_
         parse_mode: "HTML",
       });
     }
-    if (journalId !== MANAGER_ID) await handleActivity(sb, journalId, [{ type: "done", taskId }]);
+    // איש צוות → עדכון לאופיר; משימה משותפת → עדכון גם לשותף/ה (כולל כשאופיר הוא שסימן)
+    await handleActivity(sb, journalId, [{ type: "done", taskId }]);
     return;
   }
 

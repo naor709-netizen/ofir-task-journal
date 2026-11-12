@@ -9,6 +9,7 @@ import {
 import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta } from "@/lib/team";
 import { MANAGER_ID, MANAGER_NAME } from "@/lib/journals";
 import { T, alpha, Ic, Sheet, primaryBtn, ghostBtn, softBtn, inputStyle } from "./ui";
+import { InstallSteps } from "./InstallApp";
 
 type PushState = "unsupported" | "off" | "on" | "denied";
 
@@ -196,7 +197,7 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
         {pushState === "on" ? (
           <Note tone="ok">ההתראות פעילות במכשיר הזה — יקפצו גם כשהיומן סגור.</Note>
         ) : ios && !standalone ? (
-          <IphoneSteps />
+          <InstallSteps os="ios" />
         ) : pushState === "denied" ? (
           <Note tone="danger">
             הטלפון חוסם התראות מהיומן.{" "}
@@ -407,29 +408,7 @@ function TelegramSetupSteps() {
   );
 }
 
-// באייפון התראות מהיומן עובדות רק כשהוא מותקן במסך הבית (iOS 16.4 ומעלה)
-function IphoneSteps() {
-  const step = (n: number, body: React.ReactNode) => (
-    <li style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-      <span className="num" style={{
-        width: 22, height: 22, borderRadius: 99, flexShrink: 0, background: T.surface, color: T.accent,
-        display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, boxShadow: T.shadowSm,
-      }}>{n}</span>
-      <span style={{ paddingTop: 2 }}>{body}</span>
-    </li>
-  );
-  return (
-    <div>
-      <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 9, fontSize: 12.5, color: T.ink, lineHeight: 1.55 }}>
-        {step(1, <>פותחים את היומן ב-<b>Safari</b>.</>)}
-        {step(2, <>לוחצים על כפתור השיתוף <span style={{ display: "inline-flex", verticalAlign: "-2px", color: T.accent }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4" /><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" /></svg></span> בתחתית המסך.</>)}
-        {step(3, <>בוחרים <b>״הוספה למסך הבית״</b> ← ״הוסף״.</>)}
-        {step(4, <>פותחים את היומן <b>מהאייקון החדש</b>, חוזרים לכאן ולוחצים ״הפעלת התראות״.</>)}
-      </ol>
-      <p style={{ margin: "10px 0 0", fontSize: 11.5, color: T.ink3 }}>נדרש iOS 16.4 ומעלה. אם זה מסובך — טלגרם למעלה עובד מיד.</p>
-    </div>
-  );
-}
+// באייפון התראות מהיומן עובדות רק כשהוא מותקן במסך הבית (iOS 16.4 ומעלה) — השלבים ב-InstallApp.tsx
 
 function Channel({ icon, title, subtitle, badge, children }: {
   icon: React.ReactNode; title: string; subtitle: string;

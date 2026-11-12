@@ -138,6 +138,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
   const [assignTo, setAssignTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<TeamMember | null>(null);
   const [shareFor, setShareFor] = useState<TeamMember | null>(null);
+  const [removing, setRemoving] = useState<TeamMember | null>(null);
   const [openMember, setOpenMember] = useState<{ jid: string; taskId: string } | null>(null);
   // של מי המשימות שמוצגות ב"כל המשימות" (ברירת מחדל: איש הצוות הראשון)
   const [tasksOfState, setTasksOf] = useState<string | null>(focusMember ?? null);
@@ -260,6 +261,14 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
             }}>
               {Ic.userPlus(15)} הוספה לצוות
             </button>
+            {!noMembers && (
+              <button onClick={() => document.getElementById("tj-team-manage")?.scrollIntoView({ behavior: "smooth", block: "center" })} style={{
+                ...ghostBtn, height: 42, padding: "0 16px", fontSize: 13, color: "#fff",
+                border: "1px solid rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.1)",
+              }}>
+                {Ic.sliders(15)} ניהול ומחיקה
+              </button>
+            )}
           </div>
         </div>
 
@@ -417,29 +426,31 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
                 )}
               </section>
 
-              {/* ---- ניהול הצוות: מי בצוות, עריכה, קישור, הסרה ---- */}
-              <section className="tj-card" style={{ ...card, padding: 16 }}>
+              {/* ---- ניהול הצוות: מי בצוות, עריכה, קישור, מחיקה ---- */}
+              <section id="tj-team-manage" className="tj-card" style={{ ...card, padding: 16 }}>
                 <Head icon={Ic.users(15)} title="ניהול הצוות" count={members.length} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {meta.roster.members.map((m) => {
                     const ch = phoneChannel(m.id);
                     return (
-                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, background: T.bg2, borderRadius: 14, padding: "10px 12px" }}>
-                        <Avatar name={m.name} color={m.color} size={36} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
-                          <div style={{ fontSize: 11, color: T.ink3 }}>
-                            {m.role ? `${m.role} · ` : ""}בצוות מאז {new Date(m.createdAt).toLocaleDateString("he-IL")}
-                            {" · "}<span style={{ color: ch ? T.mint : T.ink3 }}>{ch ? CHANNEL_LABEL[ch] : "בלי התראות"}</span>
+                      <div key={m.id} style={{ background: T.bg2, borderRadius: 14, padding: "10px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <Avatar name={m.name} color={m.color} size={36} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+                            <div style={{ fontSize: 11, color: T.ink3 }}>
+                              {m.role ? `${m.role} · ` : ""}בצוות מאז {new Date(m.createdAt).toLocaleDateString("he-IL")}
+                              {" · "}<span style={{ color: ch ? T.mint : T.ink3 }}>{ch ? CHANNEL_LABEL[ch] : "בלי התראות"}</span>
+                            </div>
                           </div>
                         </div>
-                        <IconAction label={`עריכת ${m.name}`} onClick={() => setEditing(m)} color={T.ink2}>{Ic.pencil(13)}</IconAction>
-                        <IconAction label={`הקישור של ${m.name}`} onClick={() => setShareFor(m)} color={T.ink2}>{Ic.link(13)}</IconAction>
-                        <IconAction label={`הסרת ${m.name} מהצוות`} onClick={async () => {
-                          if (!confirm(`להסיר את ${m.name} מהצוות?\n\nהיומן שלו/ה וכל המשימות יימחקו, והקישור יפסיק לעבוד.\nעותק נשמר בגיבוי הלילי.`)) return;
-                          await removeMember(m.id);
-                          toast(`${m.name} הוסר/ה מהצוות`, "info");
-                        }} color={T.danger}>{Ic.trash(13)}</IconAction>
+                        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                          <button onClick={() => setEditing(m)} style={{ ...ghostBtn, background: T.surface, flex: 1 }}>{Ic.pencil(12)} עריכה</button>
+                          <button onClick={() => setShareFor(m)} style={{ ...ghostBtn, background: T.surface, flex: 1 }}>{Ic.link(12)} קישור</button>
+                          <button onClick={() => setRemoving(m)} aria-label={`מחיקת ${m.name} מהצוות`} style={{
+                            ...ghostBtn, flex: 1, background: T.surface, color: T.danger, border: `1px solid ${alpha(T.danger, 32)}`,
+                          }}>{Ic.trash(12)} מחיקה</button>
+                        </div>
                       </div>
                     );
                   })}
@@ -507,8 +518,10 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
       )}
       {editing && (
         <EditMemberDialog member={editing} onClose={() => setEditing(null)}
-          onShare={() => { setShareFor(editing); setEditing(null); }} />
+          onShare={() => { setShareFor(editing); setEditing(null); }}
+          onRemove={() => { setRemoving(editing); setEditing(null); }} />
       )}
+      {removing && <RemoveMemberDialog member={removing} onClose={() => setRemoving(null)} />}
       {shareFor && <ShareDialog member={shareFor} onClose={() => setShareFor(null)} />}
 
       {openMember && openRoot && (
@@ -523,6 +536,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
             toast("המשימה נמחקה", "info");
           }}
           onAddCategory={(name, color) => addJournalCategory(openMember.jid, name, color)}
+          share={{ journalId: openMember.jid, people, canEdit: true }}
           onClose={() => setOpenMember(null)}
         />
       )}
@@ -996,6 +1010,7 @@ function MemberTasksPanel({ members, selected, onSelect, slice, todayKey, onOpen
                     </span>
                     {r.critical && !done && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700, color: T.danger }}>{Ic.flame(11)} קריטית</span>}
                     {r.assignedBy && <span style={{ fontSize: 10, fontWeight: 700, color: T.accent, background: T.accentSoft, borderRadius: 99, padding: "1px 8px" }}>מ{MANAGER_NAME}</span>}
+                    {(r.ownerId || r.sharedWith?.length) && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, color: T.ink2, background: T.surface2, borderRadius: 99, padding: "1px 8px" }}>{Ic.users(10)} משותפת</span>}
                   </span>
                   <span style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4, fontSize: 11, color: T.ink3 }}>
                     <span style={{ color: T.ink2, fontWeight: 600 }}>{STATUS_LABELS[r.status]}</span>
@@ -1165,8 +1180,12 @@ function ShareDialog({ member, onClose }: { member: TeamMember; onClose: () => v
     `היי ${member.name}!`,
     `זה יומן המשימות שלך: ${url}`,
     "",
-    "כדאי: להוסיף אותו למסך הבית (שיתוף ← הוספה למסך הבית),",
-    "ולהפעיל התראות בכפתור הפעמון (חינם) — כך תזכורות ומשימות חדשות יקפצו בטלפון.",
+    "להתקנה כאפליקציה (פעם אחת, חינם):",
+    "• אייפון — לפתוח ב-Safari ← שיתוף ← ״הוספה למסך הבית״",
+    "• אנדרואיד — לפתוח ב-Chrome ← ⋮ ← ״התקנת אפליקציה״",
+    "(בתוך היומן יש כפתור ״התקנה״ שמראה הכל צעד-צעד)",
+    "",
+    "ואז להפעיל התראות בכפתור הפעמון — כך תזכורות ומשימות חדשות יקפצו בטלפון.",
   ].join("\n");
   async function copy() {
     try { await navigator.clipboard.writeText(url); toast("הקישור הועתק", "success"); }
@@ -1196,7 +1215,59 @@ function ShareDialog({ member, onClose }: { member: TeamMember; onClose: () => v
   );
 }
 
-function EditMemberDialog({ member, onClose, onShare }: { member: TeamMember; onClose: () => void; onShare: () => void }) {
+// מחיקת איש צוות — דיאלוג משלנו ולא confirm() של הדפדפן (שנחסם בחלק מהדפדפנים הפנימיים)
+function RemoveMemberDialog({ member, onClose }: { member: TeamMember; onClose: () => void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  async function remove() {
+    setBusy(true);
+    try {
+      await removeMember(member.id);
+      toast(`${member.name} נמחק/ה מהצוות`, "info");
+      onClose();
+    } catch {
+      toast("המחיקה נכשלה — בדקו חיבור ונסו שוב", "error");
+      setBusy(false);
+    }
+  }
+  const line = (text: string) => (
+    <li style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <span style={{ color: T.danger, display: "inline-flex", marginTop: 3 }}>{Ic.x(11)}</span>
+      <span>{text}</span>
+    </li>
+  );
+  return (
+    <Sheet title="מחיקת איש צוות" icon={Ic.trash(15)} onClose={onClose} side="center" width={420}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <Avatar name={member.name} color={member.color} size={46} ring />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17 }}>למחוק את {member.name}?</div>
+          <div style={{ fontSize: 12, color: T.ink3 }}>{member.role ? `${member.role} · ` : ""}בצוות מאז {new Date(member.createdAt).toLocaleDateString("he-IL")}</div>
+        </div>
+      </div>
+      <ul style={{
+        listStyle: "none", margin: 0, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 7,
+        fontSize: 12.5, lineHeight: 1.55, color: T.ink, background: T.dangerSoft, borderRadius: 14, border: `1px solid ${alpha(T.danger, 22)}`,
+      }}>
+        {line("היומן וכל המשימות שבו יימחקו.")}
+        {line("הקישור האישי יפסיק לעבוד, וההתראות לטלפון ינותקו.")}
+      </ul>
+      <p style={{ margin: "10px 2px 0", fontSize: 12, color: T.ink3, lineHeight: 1.6 }}>
+        היומן של {MANAGER_NAME} לא משתנה, ומשימות משותפות ש{MANAGER_NAME} יצר נשארות אצלו. עותק של הכל נשמר בגיבוי הלילי.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <button onClick={onClose} style={{ ...ghostBtn, flex: 1, height: 44, fontSize: 13 }}>ביטול</button>
+        <button onClick={remove} disabled={busy} style={{
+          flex: 1.3, height: 44, borderRadius: 99, border: "none", cursor: "pointer", fontFamily: "var(--font-display)",
+          fontSize: 13.5, fontWeight: 700, color: "#fff", background: T.danger, opacity: busy ? 0.6 : 1,
+          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
+        }}>{Ic.trash(14)} {busy ? "מוחק…" : "מחיקה מהצוות"}</button>
+      </div>
+    </Sheet>
+  );
+}
+
+function EditMemberDialog({ member, onClose, onShare, onRemove }: { member: TeamMember; onClose: () => void; onShare: () => void; onRemove: () => void }) {
   const { toast } = useToast();
   const [name, setName] = useState(member.name);
   const [role, setRole] = useState(member.role ?? "");
@@ -1205,12 +1276,6 @@ function EditMemberDialog({ member, onClose, onShare }: { member: TeamMember; on
     if (!name.trim()) return;
     await updateMember(member.id, { name: name.trim(), role: role.trim() || undefined, color });
     toast("נשמר", "success");
-    onClose();
-  }
-  async function remove() {
-    if (!confirm(`להסיר את ${member.name} מהצוות?\nהיומן וכל המשימות שלו/ה יימחקו (הגיבוי הלילי שומר עותק), והקישור יפסיק לעבוד.`)) return;
-    await removeMember(member.id);
-    toast(`${member.name} הוסר/ה מהצוות`, "info");
     onClose();
   }
   return (
@@ -1227,11 +1292,11 @@ function EditMemberDialog({ member, onClose, onShare }: { member: TeamMember; on
         <button onClick={save} disabled={!name.trim()} style={{ ...primaryBtn, flex: 1, height: 44, borderRadius: 14 }}>שמירה</button>
         <button onClick={onShare} style={{ ...ghostBtn, height: 44 }}>{Ic.link(13)} קישור</button>
       </div>
-      <button onClick={remove} style={{
+      <button onClick={onRemove} style={{
         marginTop: 18, width: "100%", background: "transparent", border: `1px solid ${alpha(T.danger, 30)}`,
         color: T.danger, borderRadius: 12, padding: "9px 0", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
         display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-      }}>{Ic.trash(13)} הסרה מהצוות</button>
+      }}>{Ic.trash(13)} מחיקת {member.name} מהצוות</button>
     </Sheet>
   );
 }

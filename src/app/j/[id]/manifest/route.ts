@@ -14,16 +14,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     start_url: `/j/${id}`,
     scope: "/",
     display: "standalone",
-    background_color: "#F1F4F9",
+    background_color: "#143E95", // כמו רקע הפתיח — מסך הפתיחה של אנדרואיד ממשיך ישר לסרטון
     theme_color: PERSON_COLORS[member?.color ?? "teal"].solid,
     dir: "rtl",
     lang: "he",
     // הלוגו של האפליקציה (התמונה) — אותו לוגו לכל היומנים
     icons: [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
-      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/icon-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-maskable-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/icon-maskable-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
   return new Response(JSON.stringify(body), {

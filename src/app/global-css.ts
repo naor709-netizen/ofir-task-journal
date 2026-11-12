@@ -296,51 +296,50 @@ input::placeholder, textarea::placeholder { color: var(--tj-ink3); opacity: 1; }
   }
 }
 
-/* ---- פתיח: סרטון בלי קול לפני הכניסה ---- */
-/* רקע בכחול של הסרטון עצמו — בהיר במרכז, עמוק בשוליים, כך שהמסגרת "יושבת" בתוכו */
+/* ---- פתיח: סרטון בלי קול על כל המסך, ואז מעבר הדרגתי ליומן ---- */
+/* בלי מסגרת ובלי קופסה: הרקע הוא הכחול של שולי הסרטון עצמו, והקצוות שלו נמוגים לתוכו. */
 .tj-intro {
-  position: fixed; inset: 0; z-index: 400;
+  position: fixed; inset: 0; z-index: 400; overflow: hidden; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  background:
-    radial-gradient(70% 55% at 50% 45%, #3D8EF0 0%, rgba(61,142,240,0) 70%),
-    linear-gradient(160deg, #1C5FD6 0%, #0E3FAE 55%, #0A2C86 100%);
-  transition: opacity .5s var(--ease-out), visibility .5s;
+  background: linear-gradient(180deg, #0B2B7C 0%, #143E95 36%, #143E95 64%, #0B2B7C 100%);
+  opacity: 1; transition: opacity .95s var(--ease-out);
 }
-html[data-intro="skip"] .tj-intro { display: none; }
-.tj-intro[data-phase="leaving"] { opacity: 0; visibility: hidden; }
-.tj-intro-stage {
-  position: relative; width: min(92vw, 1080px);
-  display: flex; flex-direction: column; align-items: center; gap: 20px;
-  transition: transform .5s var(--ease-out);
+html[data-intro="skip"] .tj-intro, .tj-intro[data-phase="gone"] { display: none; }
+.tj-intro[data-phase="leaving"] { opacity: 0; pointer-events: none; }
+/* טלפון לאורך: הסרטון ברוחב מלא ומוגדל מעט (חיתוך עדין בצדדים), עם קצה עליון ותחתון שנמוג */
+.tj-intro-media {
+  position: relative; width: 100vw; height: min(100dvh, 92vw);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 11%, #000 89%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 11%, #000 89%, transparent 100%);
+  transition: transform 1.2s var(--ease-out);
 }
-.tj-intro[data-phase="leaving"] .tj-intro-stage { transform: scale(1.04); }
-.tj-intro-frame {
-  width: 100%; aspect-ratio: 16 / 9; border-radius: 26px; overflow: hidden;
-  background: #1E63E0 url(/intro-poster.jpg) center / cover no-repeat;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.28), 0 40px 90px -30px rgba(2,10,40,0.7);
+.tj-intro[data-phase="leaving"] .tj-intro-media { transform: scale(1.05); }
+/* הפריים הראשון, קטן ומטושטש, מוטמע בדף — משהו מופיע מיד, עוד לפני שהסרטון ירד */
+.tj-intro-media::before {
+  content: ""; position: absolute; inset: 0;
+  background: url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//gAQTGF2YzYwLjMxLjEwMgD/2wBDAA4KCw0LCQ4NDA0QDw4RFiQXFhQUFiwgIRokNC43NjMuMjI6QVNGOj1OPjIySGJJTlZYXV5dOEVmbWVabFNbXVn/2wBDAQ8QEBYTFioXFypZOzI7WVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVn/wAARCAASACADASIAAhEBAxEB/8QAGQAAAgMBAAAAAAAAAAAAAAAAAAYCBAUH/8QAJRAAAgEDBAEEAwAAAAAAAAAAAQIDAAQRBRIhMUETFGFxIlGB/8QAGAEAAwEBAAAAAAAAAAAAAAAAAwQFAQL/xAAfEQABBAICAwAAAAAAAAAAAAABAAIEMQMSEyEyM0H/2gAMAwEAAhEDEQA/AFyC1aVwAAM1t21jDbzhJYklMke4nblkA+fFXIdP9AFzxt5zVzTpYZ9QSFlSaUo5EZyMgfP77qjNe3UMB7tLQ9nE5PlKreadA0e6JQCesHg0sXdqUcgjkHxXTIGaAO12kFsBjYqOAT94FJ2rxIt7MoKH8u1OR/KPFzHKdSFwcPHRTSyqwIKgg9gil3XwI7kFAFKxrtxxjk9UUUqbQ4dKdsq+xBwM7jzj6rPPb0UVRj+K1vtK/9k=) 60% 50% / cover no-repeat;
+  filter: blur(14px); transform: scale(1.08);
+  transition: opacity .5s var(--ease-out);
 }
-.tj-intro-frame video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.tj-intro-bar {
-  width: min(220px, 56%); height: 4px; border-radius: 99px; overflow: hidden;
-  background: rgba(255,255,255,0.25);
+.tj-intro[data-playing] .tj-intro-media::before { opacity: 0; }
+.tj-intro-media video {
+  position: relative; width: 100%; height: 100%; display: block;
+  object-fit: cover; object-position: 60% 50%; background: transparent;
 }
-.tj-intro-bar span {
-  display: block; height: 100%; background: #fff; border-radius: inherit;
-  transform-origin: right center; transition: transform .26s linear;
+/* מסך רחב: הסרטון ממלא את כל המסך, בלי שוליים */
+@media (min-aspect-ratio: 5/4) {
+  .tj-intro-media { height: 100dvh; -webkit-mask-image: none; mask-image: none; }
+  .tj-intro-media::before { background-position: 50% 50%; }
+  .tj-intro-media video { object-position: 50% 50%; }
 }
 .tj-intro-skip {
-  display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 24px;
-  border-radius: 99px; border: none; cursor: pointer;
-  background: #fff; color: #0E3FAE;
-  font: 700 14.5px/1 var(--font-display); letter-spacing: -0.01em;
-  box-shadow: 0 14px 30px -14px rgba(2,10,40,0.7);
-  transition: transform .2s var(--ease-out);
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+  height: 40px; padding: 0 20px; border-radius: 99px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.45); background: rgba(9,30,90,0.35); color: #fff;
+  font: 600 13.5px/1 var(--font-display); letter-spacing: -0.01em;
 }
-.tj-intro-skip:hover { transform: translateY(-1px); }
 .tj-intro-skip:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-@media (max-width: 640px) {
-  .tj-intro-frame { border-radius: 20px; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .tj-aurora i, .tj-live::after, .tj-skel { animation: none !important; }

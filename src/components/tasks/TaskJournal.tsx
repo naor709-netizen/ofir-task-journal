@@ -461,17 +461,25 @@ export default function TaskJournal({ journalId, personName, personColor }: {
     entranceDone.current = true;
     const mm = gsap.matchMedia();
     mm.add("(prefers-reduced-motion: no-preference)", () => {
-      const tl = gsap.timeline({ defaults: { ease: "power3.out", duration: 0.5 } });
-      tl.from(".tj-header", { y: -12, opacity: 0, duration: 0.36, clearProps: "opacity,transform" })
-        .from(".tj-toolbar", { y: 10, opacity: 0, duration: 0.36, clearProps: "opacity,transform" }, "-=0.2")
-        .from(".tj-main > *", { y: 18, opacity: 0, stagger: 0.05, clearProps: "opacity,transform" }, "-=0.18");
-      gsap.utils.toArray<HTMLElement>(".tj-kpi-num").forEach((el) => {
-        const end = parseInt(el.textContent || "0", 10) || 0;
-        if (end > 0) {
-          gsap.fromTo(el, { textContent: 0 },
-            { textContent: end, duration: 0.9, delay: 0.25, ease: "power2.out", snap: { textContent: 1 } });
-        }
-      });
+      const play = () => {
+        const tl = gsap.timeline({ defaults: { ease: "power3.out", duration: 0.5 } });
+        tl.from(".tj-header", { y: -12, opacity: 0, duration: 0.36, clearProps: "opacity,transform" })
+          .from(".tj-toolbar", { y: 10, opacity: 0, duration: 0.36, clearProps: "opacity,transform" }, "-=0.2")
+          .from(".tj-main > *", { y: 18, opacity: 0, stagger: 0.05, clearProps: "opacity,transform" }, "-=0.18");
+        gsap.utils.toArray<HTMLElement>(".tj-kpi-num").forEach((el) => {
+          const end = parseInt(el.textContent || "0", 10) || 0;
+          if (end > 0) {
+            gsap.fromTo(el, { textContent: 0 },
+              { textContent: end, duration: 0.9, delay: 0.25, ease: "power2.out", snap: { textContent: 1 } });
+          }
+        });
+      };
+      // הסרטון עדיין מכסה את המסך? מחכים — והיומן נכנס בדיוק כשהוא מתחיל להתמוסס
+      const intro = document.getElementById("tj-intro");
+      const covered = !!intro && !intro.dataset.phase && document.documentElement.dataset.intro !== "skip";
+      if (!covered) { play(); return; }
+      window.addEventListener("tj-intro-leave", play, { once: true });
+      return () => window.removeEventListener("tj-intro-leave", play);
     });
   }, { scope: rootRef, dependencies: [!!journal] });
 
@@ -1198,7 +1206,6 @@ function Header({ sync, onSyncClick, personName, personColor, isManager, teamCou
               היומן השיתופי של {MANAGER_NAME}
             </>
           )}
-          <span className="num" style={{ opacity: 0.6, letterSpacing: "0.12em", fontSize: 9.5 }}>· V5</span>
         </div>
       </div>
       <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1266,7 +1273,15 @@ function WeekInsights({ allFlat, catById, todayKey }: { allFlat: Task[]; catById
           color: trend >= 0 ? T.mint : T.amber, background: trend >= 0 ? T.mintSoft : T.amberSoft,
         }}>
           <span className="num">{doneWeek}</span> נסגרו השבוע
-          {trend !== 0 && <> · {trend > 0 ? "▲" : "▼"} <span className="num">{Math.abs(trend)}</span> משבוע שעבר</>}
+          {trend !== 0 && (
+            <>
+              {" · "}
+              <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true" style={{ display: "inline-block", verticalAlign: "1px", transform: trend > 0 ? "none" : "rotate(180deg)" }}>
+                <path d="M4 1 7.5 7h-7L4 1Z" fill="currentColor" />
+              </svg>
+              {" "}<span className="num">{Math.abs(trend)}</span> {trend > 0 ? "יותר" : "פחות"} משבוע שעבר
+            </>
+          )}
         </span>
       } />
       {open.length > 0 && (
@@ -1368,26 +1383,28 @@ function ViewTabs({ views, view, onChange, badges }: {
 // הטקסט יושב בצד ימין (RTL), ולכן כל רמפה כהה בימין ומתבהרת שמאלה.
 type Sky = { name: string; bg: string; orb: string; orbGlow: string; stars: boolean; ring: string };
 
+// משפחת צבע אחת — כחול עמוק של היומן. שעת היום מסופרת ע"י השמש/הירח ופס אופק דק
+// מלוח הצבעים (קרם בזריחה, ורוד-לבנדר בשקיעה), לא ע"י שטיפה כתומה שמתחרה באריחים.
 function skyFor(h: number): Sky {
   if (h >= 5 && h < 10) return {
     name: "זריחה",
-    bg: "linear-gradient(245deg, #172F73 0%, #3C4FA8 34%, #D9775E 72%, #F4BE7E 100%)",
-    orb: "#FFE6B0", orbGlow: "rgba(255,196,120,0.55)", stars: false, ring: "#FFE6B0",
+    bg: "linear-gradient(245deg, #12296F 0%, #1D45B8 42%, #3F7FE0 78%, #A9C8F2 94%, #EFE3AF 100%)",
+    orb: "#FFF1C7", orbGlow: "rgba(255,226,160,0.5)", stars: false, ring: "#EFE3AF",
   };
   if (h >= 10 && h < 16) return {
     name: "צהריים",
-    bg: "linear-gradient(245deg, #12348F 0%, #1D4ED8 38%, #2F8FEA 74%, #6CC4F5 100%)",
-    orb: "#FFF6CF", orbGlow: "rgba(255,240,180,0.55)", stars: false, ring: "#A7F3D0",
+    bg: "linear-gradient(245deg, #12348F 0%, #1D4ED8 40%, #2F8FEA 76%, #6CC4F5 100%)",
+    orb: "#FFF6CF", orbGlow: "rgba(255,240,180,0.5)", stars: false, ring: "#B5E51D",
   };
   if (h >= 16 && h < 20) return {
     name: "שקיעה",
-    bg: "linear-gradient(245deg, #101B4A 0%, #3A2F7A 30%, #B24A6E 66%, #F29245 100%)",
-    orb: "#FFD08A", orbGlow: "rgba(255,150,90,0.55)", stars: false, ring: "#FFD08A",
+    bg: "linear-gradient(245deg, #101B4A 0%, #23328F 38%, #5B4DB5 72%, #AA9CDA 92%, #FF9BB8 100%)",
+    orb: "#FFE1C2", orbGlow: "rgba(255,170,150,0.45)", stars: false, ring: "#FFD3DF",
   };
   return {
     name: "לילה",
     bg: "linear-gradient(245deg, #040A1C 0%, #0A1638 45%, #16307A 100%)",
-    orb: "#E8EEFF", orbGlow: "rgba(180,200,255,0.35)", stars: true, ring: "#A7F3D0",
+    orb: "#E8EEFF", orbGlow: "rgba(180,200,255,0.35)", stars: true, ring: "#9AD9EA",
   };
 }
 
@@ -1470,13 +1487,13 @@ function Hero({
               {greet}, {firstName(personName)}
             </h2>
             {streak >= 2 && (
-              <span className="num" title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
+              <span title={`${streak} ימים ברצף עם משימות שהושלמו`} style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
                 fontSize: 12, fontWeight: 700, color: "#fff", background: W(0.16),
                 border: `1px solid ${W(0.28)}`, borderRadius: 99, padding: "3px 11px 3px 9px",
                 backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
               }}>
-                {Ic.flame(12)} רצף {streak} ימים
+                {Ic.flame(12)} רצף <span className="num">{streak}</span> ימים
               </span>
             )}
           </div>
@@ -1690,9 +1707,11 @@ function StatCell({ label, value, icon, tone, pal, active, onClick }: {
       position: "relative", overflow: "hidden",
       display: "flex", alignItems: "center", gap: 12, textAlign: "start", padding: "14px 15px",
       borderRadius: 18, cursor: "pointer", fontFamily: "inherit",
-      border: `1px solid ${active ? alpha(c, 55) : alpha(c, 18)}`,
-      background: `linear-gradient(150deg, ${alpha(c, active ? 20 : 12)} 0%, ${alpha(c, active ? 8 : 3)} 70%), var(--tj-surface)`,
-      boxShadow: active ? `0 12px 26px -16px ${alpha(c, 80)}` : "inset 0 1px 0 var(--tj-bezel)",
+      border: `1px solid ${active ? alpha(c, 60) : T.line}`,
+      background: active ? `linear-gradient(150deg, ${alpha(c, 16)} 0%, ${alpha(c, 5)} 70%), var(--tj-surface)` : "var(--tj-surface)",
+      boxShadow: active
+        ? `inset 0 1px 0 var(--tj-bezel), 0 10px 24px -18px ${alpha(c, 90)}`
+        : "inset 0 1px 0 var(--tj-bezel), 0 1px 2px var(--tj-shadow)",
     }}>
       <IconChip pal={pal} size={42} radius={13}>{icon}</IconChip>
       <span style={{ minWidth: 0 }}>
@@ -1762,7 +1781,8 @@ function SharedPanel({ tasks, done, full, canShare, isManager, me, partners, fil
       <SectionHead icon={Ic.share(15)} title="משימות משותפות" count={canShare ? tasks.length : undefined} pal="pink"
         extra={canShare ? (
           <button onClick={onCreate} style={{ ...primaryBtn, marginInlineStart: "auto", height: 34, padding: "0 14px", fontSize: 12.5, whiteSpace: "nowrap" }}>
-            {Ic.plus(13)} משימה משותפת{only && <span className="tj-shared-with"> עם {firstName(only.name)}</span>}
+            {Ic.plus(13)}
+            <span>משימה משותפת{only && <span className="tj-shared-with"> עם {firstName(only.name)}</span>}</span>
           </button>
         ) : undefined} />
 
@@ -1951,8 +1971,8 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
               {Ic.users(10)} {sharedLabel}
             </span>
           )}
-          <span className="num" style={{ fontSize: 10, color: T.ink3, flexShrink: 0 }}>
-            נפתחה {formatDateHe(task.createdAt)}
+          <span style={{ fontSize: 10.5, color: T.ink3, flexShrink: 0 }}>
+            נפתחה <span className="num">{formatDateHe(task.createdAt)}</span>
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5, flexWrap: "wrap" }}>

@@ -120,11 +120,10 @@ export function palOn(p: Pal): string {
   return PAL_LIGHT[p] ? "var(--pal-ink)" : "#fff";
 }
 
-export function palGradient(p: Pal): string {
+// מילוי שטוח ונקי. לכהים — הכהיה קלה (12%) כדי שגליף לבן יעבור 3:1 גם על הכחול והוורוד.
+export function palFill(p: Pal): string {
   const c = palVar(p);
-  return PAL_LIGHT[p]
-    ? `linear-gradient(140deg, color-mix(in srgb, ${c} 78%, #fff), ${c})`
-    : `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 70%, #000))`;
+  return PAL_LIGHT[p] ? c : `color-mix(in srgb, ${c} 88%, #000)`;
 }
 
 // קו מתאר דק לסימן בגרף — נותן לצבעים הבהירים קצה ברור גם על רקע לבן
@@ -139,8 +138,9 @@ export function IconChip({ pal, size = 32, radius, children, style }: {
   return (
     <span style={{
       width: size, height: size, borderRadius: radius ?? Math.round(size * 0.34), flexShrink: 0,
-      color: palOn(pal), background: palGradient(pal),
-      boxShadow: `0 8px 18px -10px ${alpha(palVar(pal), 90)}, inset 0 0 0 1px ${alpha("var(--pal-ink)", PAL_LIGHT[pal] ? 10 : 0)}`,
+      color: palOn(pal), background: palFill(pal),
+      // בלי הילה צבעונית: רק קו פנימי דק שמגדיר את הקצה (חשוב לבהירים על לבן)
+      boxShadow: `inset 0 0 0 1px ${PAL_LIGHT[pal] ? alpha("var(--pal-ink)", 12) : "rgba(255,255,255,0.14)"}`,
       display: "inline-flex", alignItems: "center", justifyContent: "center",
       ...style,
     }}>{children}</span>

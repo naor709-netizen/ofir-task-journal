@@ -10,7 +10,7 @@ import {
   STATUS_LABELS, STATUS_COLORS, NATURE_LABELS, NATURE_COLORS,
   HE_WEEKDAYS, HE_WEEKDAYS_FULL,
 } from "@/lib/tasks";
-import { T, card, alpha, Ic, StatusIcon, IconChip, palVar, type Pal } from "./ui";
+import { T, card, alpha, Ic, StatusIcon, IconChip, type Pal } from "./ui";
 import { Donut, Legend, DayBars, DayBarsLegend, Columns, SplitBars, Heatmap } from "./charts";
 
 gsap.registerPlugin(Flip, useGSAP);
@@ -572,12 +572,9 @@ function MiniStat({ label, value, sub }: { label: string; value: React.ReactNode
 }
 
 function BigStat({ label, value, pal, danger, icon }: { label: string; value: number | string; pal: Pal; danger?: boolean; icon: React.ReactNode }) {
-  const c = palVar(pal);
   return (
     <div className="tj-card" style={{
       ...card, padding: "16px 16px 14px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10,
-      background: `linear-gradient(150deg, ${alpha(c, 14)} 0%, ${alpha(c, 3)} 70%), var(--tj-surface)`,
-      border: `1px solid ${alpha(c, 20)}`,
     }}>
       <IconChip pal={pal} size={38} radius={12}>{icon}</IconChip>
       <span>

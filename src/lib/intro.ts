@@ -14,7 +14,8 @@ export const INTRO_SKIP_SCRIPT =
 
 function introBoot() {
   const KEY = "tj-intro-seen";
-  const FADE_MS = 950; // תואם ל-transition ב-global-css
+  const FADE_MS = 480; // תואם ל-transition ב-global-css
+  const SPEED = 1.25; // הסרטון רץ מעט מהר יותר: 5 שניות → 4
   const html = document.documentElement;
   const root = document.getElementById("tj-intro");
   const video = document.getElementById("tj-intro-video") as HTMLVideoElement | null;
@@ -34,6 +35,7 @@ function introBoot() {
     document.removeEventListener("keydown", onKey);
     html.style.overflow = prevOverflow;
     root!.setAttribute("data-phase", "leaving");
+    try { window.dispatchEvent(new Event("tj-intro-leave")); } catch { /* ignore */ } // היומן נכנס עכשיו
     window.setTimeout(function () {
       root!.setAttribute("data-phase", "gone");
       if (video) { try { video.pause(); video.removeAttribute("src"); video.load(); } catch { /* ignore */ } }
@@ -57,10 +59,12 @@ function introBoot() {
   video.addEventListener("error", function () { later(finish, 900); });
   video.addEventListener("playing", function () { root!.setAttribute("data-playing", "1"); });
   video.src = "/intro.mp4";
+  video.defaultPlaybackRate = SPEED;
+  video.playbackRate = SPEED;
   const p = video.play();
   if (p && typeof p.catch === "function") p.catch(function () { later(finish, 1500); }); // ניגון אוטומטי נחסם
   later(function () { if (video!.readyState < 2) finish(); }, 4500); // רשת איטית — לא תוקעים את הכניסה
-  later(finish, 10000); // תקרה (הסרטון באורך 5 שניות)
+  later(finish, 8000); // תקרה (הסרטון רץ כ-4 שניות)
 }
 
 export const INTRO_BOOT_SCRIPT = `(${introBoot.toString()})()`;

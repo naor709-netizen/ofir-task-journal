@@ -30,7 +30,7 @@ import { Donut, Legend, DayBars, DayBarsLegend } from "./charts";
 
 gsap.registerPlugin(useGSAP);
 
-type ViewKey = "dashboard" | "team" | "week" | "table" | "board" | "stats";
+type ViewKey = "dashboard" | "shared" | "team" | "week" | "table" | "board" | "stats";
 
 const BASE_VIEWS: { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode }[] = [
   { key: "dashboard", label: "דשבורד", icon: Ic.grid },
@@ -74,10 +74,14 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   // משימה משותפת חדשה: עם שותף/ה יחיד/ה — משותפת מראש; עם כמה — בוחרים בחלון המשימה
   const createShared = () => createTask(partners.length === 1 ? [partners[0].id] : []);
 
-  const VIEWS = useMemo(
-    () => (isManager ? [BASE_VIEWS[0], { key: "team" as ViewKey, label: "הצוות", icon: Ic.users }, ...BASE_VIEWS.slice(1)] : BASE_VIEWS),
-    [isManager]
-  );
+  // "משותפות" — טאב קבוע מיד אחרי הדשבורד, אצל כולם
+  const VIEWS = useMemo(() => {
+    const shared = { key: "shared" as ViewKey, label: "משותפות", icon: Ic.share };
+    const team = { key: "team" as ViewKey, label: "הצוות", icon: Ic.users };
+    return isManager
+      ? [BASE_VIEWS[0], shared, team, ...BASE_VIEWS.slice(1)]
+      : [BASE_VIEWS[0], shared, ...BASE_VIEWS.slice(1)];
+  }, [isManager]);
   // קישורים מהתראות: /?view=team (היומן לא מצויר בשרת — אין חשש לאי-התאמה)
   const [view, setView] = useState<ViewKey>(() => {
     if (typeof window === "undefined") return "dashboard";
@@ -245,6 +249,9 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   // משימות שהושלמו לא נשארות ברשימה הראשית — הן עוברות לרשימה מרוכזת מתחת ללוח השנה
   // משימות משותפות פתוחות — מקבלות מקום משלהן בדשבורד, ולכן לא חוזרות ב"המשימות שלי"
   const sharedTasks = filteredTasks.filter((t) => isSharedTask(t) && !isDone(t));
+  const sharedDone = filteredTasks.filter((t) => isSharedTask(t) && isDone(t))
+    .sort((a, b) => (b.endDate ?? "").localeCompare(a.endDate ?? ""));
+  const sharedOpenAll = (journal?.tasks ?? []).filter((t) => isSharedTask(t) && !isDone(t)).length;
   const regularTasks = filteredTasks.filter((t) => !isDone(t) && !t.critical && !isSharedTask(t));
   const doneTasks = [...filteredTasks.filter(isDone)]
     .sort((a, b) => (b.endDate ?? "").localeCompare(a.endDate ?? ""));
@@ -518,6 +525,20 @@ export default function TaskJournal({ journalId, personName, personColor }: {
     );
   }
 
+  const sharedPanelProps = {
+    tasks: sharedTasks,
+    canShare, isManager,
+    me: { id: journalId, name: personName, color: personColor },
+    partners,
+    filtered: filtersActive,
+    catById, todayKey,
+    labelOf: sharedLabelOf,
+    onCreate: createShared,
+    onAddTeam: () => { setView("team"); window.scrollTo({ top: 0, behavior: "smooth" }); },
+    onOpen: (id: string) => setOpenTaskId(id),
+    onCycle: (t: Task) => cycleStatus(t),
+  };
+
   const isTeam = view === "team";
 
   return (
@@ -534,7 +555,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
         border: `1px solid ${T.line}`, borderRadius: 22,
         boxShadow: "inset 0 1px 0 var(--tj-bezel), 0 14px 34px -18px var(--tj-shadow-strong)",
       }}>
-        <ViewTabs views={VIEWS} view={view} onChange={setView} />
+        <ViewTabs views={VIEWS} view={view} onChange={setView} badges={{ shared: sharedOpenAll }} />
 
         <div className="tj-actions" style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={toggleTheme} aria-label={theme === "dark" ? "מעבר למצב בהיר" : "מעבר למצב כהה"} title={theme === "dark" ? "מעבר למצב בהיר" : "מעבר למצב כהה"} style={{
@@ -864,42 +885,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
               )}
 
               {/* ---- משימות משותפות: מופיעות אצל שני הצדדים ---- */}
-              {canShare && (
-                <section className="tj-card tj-shared" style={{ ...card, padding: 16 }}>
-                  <SectionHead icon={Ic.users(15)} title="משימות משותפות" count={sharedTasks.length} pal="pink"
-                    extra={
-                      <button onClick={createShared} style={{ ...primaryBtn, marginInlineStart: "auto", height: 34, padding: "0 14px", fontSize: 12.5 }}>
-                        {Ic.plus(13)} משימה משותפת
-                      </button>
-                    } />
-                  {sharedTasks.length === 0 ? (
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 12, background: T.bg2, borderRadius: 14, padding: "12px 14px",
-                      fontSize: 12.5, color: T.ink2, lineHeight: 1.6,
-                    }}>
-                      <span style={{ display: "inline-flex", flexShrink: 0 }}>
-                        {[{ id: journalId, name: personName, color: personColor }, ...partners.slice(0, 2)].map((p, i) => (
-                          <span key={p.id} style={{ marginInlineStart: i ? -8 : 0, borderRadius: 99, boxShadow: "0 0 0 2px var(--tj-bg2)", display: "inline-flex" }}>
-                            <Avatar name={p.name} color={p.color} size={28} />
-                          </span>
-                        ))}
-                      </span>
-                      <span>
-                        {filtersActive && sharedOnly === false ? "אין משימות משותפות שתואמות את הסינון. " : "עוד אין משימות משותפות. "}
-                        משימה משותפת מופיעה ביומן של {partners.length === 1 ? `שניכם — ${firstName(personName)} ו${firstName(partners[0].name)}` : "כל מי ששותף בה"}, וכל אחד יכול לעדכן ולסמן.
-                      </span>
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {sharedTasks.map((t) => (
-                        <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={sharedLabelOf(t)}
-                          critical={t.critical} todayKey={todayKey}
-                          onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )}
+              <SharedPanel {...sharedPanelProps} />
 
               {/* critical strip */}
               {criticalTasks.length > 0 && (
@@ -1012,6 +998,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
             </>
           )}
 
+          {view === "shared" && <SharedPanel {...sharedPanelProps} full done={sharedDone} />}
           {view === "week" && (
             <WeekView roots={filteredTasks} catById={catById} todayKey={todayKey} onOpen={setOpenTaskId} />
           )}
@@ -1073,7 +1060,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
         .tj-newbtn-orb { transition: transform .45s var(--ease-soft); }
         .tj-catdel { opacity: 0; transition: opacity .15s; }
         .tj-catrow:hover .tj-catdel, .tj-catrow:focus-within .tj-catdel { opacity: 0.75; }
-        @media (max-width: 520px) { .tj-synctext { display: none; } }
+        @media (max-width: 520px) { .tj-synctext { display: none; } .tj-shared-with { display: none; } }
         @media (max-width: 1180px) {
           .tj-dash-cols { flex-direction: column !important; align-items: stretch !important; }
           .tj-dash-cal { width: 100% !important; position: static !important; }
@@ -1314,10 +1301,11 @@ function WeekInsights({ allFlat, catById, todayKey }: { allFlat: Task[]; catById
 }
 
 // ---- טאבים עם גלולה שגולשת ----
-function ViewTabs({ views, view, onChange }: {
+function ViewTabs({ views, view, onChange, badges }: {
   views: { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode }[];
   view: ViewKey;
   onChange: (v: ViewKey) => void;
+  badges?: Partial<Record<ViewKey, number>>;
 }) {
   const navRef = useRef<HTMLElement>(null);
   const [pill, setPill] = useState<{ x: number; w: number; total: number } | null>(null);
@@ -1363,6 +1351,12 @@ function ViewTabs({ views, view, onChange }: {
           }}>
             <span style={{ color: active ? "#fff" : T.ink3, display: "inline-flex", transition: "color .3s var(--ease-out)" }}>{v.icon(15)}</span>
             {v.label}
+            {!!badges?.[v.key] && (
+              <span className="num" style={{
+                minWidth: 18, height: 18, padding: "0 5px", borderRadius: 99, fontSize: 10.5, fontWeight: 700, lineHeight: "18px",
+                textAlign: "center", background: active ? "rgba(255,255,255,0.25)" : T.accentSoft, color: active ? "#fff" : T.accent,
+              }}>{badges[v.key]}</span>
+            )}
           </button>
         );
       })}
@@ -1744,6 +1738,103 @@ function NavBtn({ children, onClick, label }: { children: React.ReactNode; onCli
       background: "transparent", cursor: "pointer", color: T.ink2,
       display: "inline-flex", alignItems: "center", justifyContent: "center",
     }}>{children}</button>
+  );
+}
+
+// ---- משימות משותפות: מקטע בדשבורד + טאב "משותפות" (full) ----
+type PersonLite = { id: string; name: string; color: PersonColor };
+function SharedPanel({ tasks, done, full, canShare, isManager, me, partners, filtered, catById, todayKey, labelOf, onCreate, onAddTeam, onOpen, onCycle }: {
+  tasks: Task[]; done?: Task[]; full?: boolean;
+  canShare: boolean; isManager: boolean; me: PersonLite; partners: PersonLite[]; filtered: boolean;
+  catById: Record<string, TaskCategory>; todayKey: string;
+  labelOf: (t: Task) => string | null;
+  onCreate: () => void; onAddTeam: () => void; onOpen: (id: string) => void; onCycle: (t: Task) => void;
+}) {
+  const only = partners.length === 1 ? partners[0] : null;
+  const faces = [me, ...partners.slice(0, 2)];
+  const steps = [
+    { n: 1, text: "לוחצים ״משימה משותפת״ (או בחלון של כל משימה ← ״שיתוף עם…״)." },
+    { n: 2, text: "המשימה מופיעה ביומן של שניכם, עם התגית ״משותפת עם…״." },
+    { n: 3, text: "כל אחד יכול לעדכן ולסמן ״הושלם״ — והשני רואה מיד. התזכורות קופצות לשניכם." },
+  ];
+  return (
+    <section className="tj-card tj-shared" style={{ ...card, padding: full ? 20 : 16 }}>
+      <SectionHead icon={Ic.share(15)} title="משימות משותפות" count={canShare ? tasks.length : undefined} pal="pink"
+        extra={canShare ? (
+          <button onClick={onCreate} style={{ ...primaryBtn, marginInlineStart: "auto", height: 34, padding: "0 14px", fontSize: 12.5, whiteSpace: "nowrap" }}>
+            {Ic.plus(13)} משימה משותפת{only && <span className="tj-shared-with"> עם {firstName(only.name)}</span>}
+          </button>
+        ) : undefined} />
+
+      {!canShare ? (
+        // אופיר בלי צוות: אין עם מי לשתף עדיין — מסבירים ושולחים להוספה
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", background: T.bg2, borderRadius: 14, padding: "14px 16px" }}>
+          <span style={{ display: "inline-flex", flexShrink: 0 }}>
+            <Avatar name={me.name} color={me.color} size={34} />
+            <span style={{
+              marginInlineStart: -10, width: 34, height: 34, borderRadius: 99, display: "inline-flex", alignItems: "center", justifyContent: "center",
+              border: `1.5px dashed ${T.lineStrong}`, background: T.surface, color: T.ink3,
+            }}>{Ic.plus(14)}</span>
+          </span>
+          <span style={{ flex: "1 1 220px", fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
+            <b style={{ color: T.ink }}>כדי לשתף משימות צריך קודם מישהו בצוות.</b>{" "}
+            {isManager ? "מוסיפים את נדין (פעם אחת) — ומאותו רגע אפשר ליצור משימות שמופיעות אצל שניכם." : "הצוות עוד נטען…"}
+          </span>
+          {isManager && (
+            <button onClick={onAddTeam} style={{ ...primaryBtn, height: 38, padding: "0 16px", fontSize: 13 }}>
+              {Ic.userPlus(14)} הוספה לצוות
+            </button>
+          )}
+        </div>
+      ) : tasks.length === 0 ? (
+        <div style={{ background: T.bg2, borderRadius: 14, padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
+            <span style={{ display: "inline-flex", flexShrink: 0 }}>
+              {faces.map((p, i) => (
+                <span key={p.id} style={{ marginInlineStart: i ? -8 : 0, borderRadius: 99, boxShadow: "0 0 0 2px var(--tj-bg2)", display: "inline-flex" }}>
+                  <Avatar name={p.name} color={p.color} size={30} />
+                </span>
+              ))}
+            </span>
+            <span>
+              <b style={{ color: T.ink }}>{filtered ? "אין משימות משותפות שתואמות את הסינון." : "עוד אין משימות משותפות."}</b>{" "}
+              משימה משותפת מופיעה ביומן של {only ? `שניכם — ${firstName(me.name)} ו${firstName(only.name)}` : "כל מי ששותף בה"}.
+            </span>
+          </div>
+          {full && (
+            <ol style={{ listStyle: "none", margin: "14px 0 0", padding: 0, display: "grid", gap: 8 }}>
+              {steps.map((st) => (
+                <li key={st.n} style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 12.5, color: T.ink, lineHeight: 1.55 }}>
+                  <IconChip pal="pink" size={22} radius={99}><span className="num" style={{ fontSize: 11, fontWeight: 700 }}>{st.n}</span></IconChip>
+                  <span style={{ paddingTop: 2 }}>{st.text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {tasks.map((t) => (
+            <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={labelOf(t)}
+              critical={t.critical} todayKey={todayKey} onOpen={() => onOpen(t.id)} onCycle={() => onCycle(t)} />
+          ))}
+        </div>
+      )}
+
+      {full && canShare && done && done.length > 0 && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "18px 2px 8px", fontSize: 12.5, fontWeight: 700, color: T.ink2 }}>
+            {Ic.checkCircle(14)} הושלמו <span className="num" style={{ color: T.ink3, fontWeight: 600 }}>{done.length}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {done.slice(0, 30).map((t) => (
+              <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={labelOf(t)}
+                todayKey={todayKey} onOpen={() => onOpen(t.id)} onCycle={() => onCycle(t)} compact />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

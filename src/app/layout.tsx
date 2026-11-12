@@ -2,8 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { GLOBAL_CSS } from "./global-css";
 import { ToastProvider } from "@/components/Toast";
 import { INSTALL_CAPTURE_SCRIPT } from "@/lib/install";
-import { INTRO_SKIP_SCRIPT } from "@/lib/intro";
-import IntroSplash from "@/components/IntroSplash";
+import { INTRO_SKIP_SCRIPT, INTRO_BOOT_SCRIPT } from "@/lib/intro";
 
 export const metadata: Metadata = {
   title: "יומן המשימות של אופיר",
@@ -12,10 +11,10 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, statusBarStyle: "default", title: "היומן של אופיר" },
   icons: {
     icon: [
-      { url: "/favicon-64.png", sizes: "64x64", type: "image/png" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/favicon-64.png?v=2", sizes: "64x64", type: "image/png" },
+      { url: "/icon-192.png?v=2", sizes: "192x192", type: "image/png" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png?v=2", sizes: "180x180", type: "image/png" }],
   },
 };
 
@@ -46,7 +45,16 @@ export default function RootLayout({
               `var f=document.createElement("link");f.rel="stylesheet";f.href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";document.head.appendChild(f);`,
           }}
         />
-        <IntroSplash />
+        {/* פתיח: סרטון בלי קול על כל המסך, ואז מעבר הדרגתי ליומן (src/lib/intro.ts).
+            HTML סטטי + סקריפט מוטמע — מתחיל מיד, בלי לחכות לטעינת האפליקציה. */}
+        <div id="tj-intro" className="tj-intro" suppressHydrationWarning>
+          <div className="tj-intro-media">
+            <video id="tj-intro-video" playsInline preload="auto" aria-label="היומן השיתופי של אופיר"
+              disablePictureInPicture suppressHydrationWarning />
+          </div>
+          <button type="button" className="tj-intro-skip">כניסה ליומן</button>
+        </div>
+        <script dangerouslySetInnerHTML={{ __html: INTRO_BOOT_SCRIPT }} />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

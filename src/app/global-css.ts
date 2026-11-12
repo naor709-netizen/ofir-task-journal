@@ -302,7 +302,7 @@ input::placeholder, textarea::placeholder { color: var(--tj-ink3); opacity: 1; }
   position: fixed; inset: 0; z-index: 400; overflow: hidden; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   background: linear-gradient(180deg, #0B2B7C 0%, #143E95 36%, #143E95 64%, #0B2B7C 100%);
-  opacity: 1; transition: opacity .95s var(--ease-out);
+  opacity: 1; transition: opacity .45s var(--ease-out);
 }
 html[data-intro="skip"] .tj-intro, .tj-intro[data-phase="gone"] { display: none; }
 .tj-intro[data-phase="leaving"] { opacity: 0; pointer-events: none; }
@@ -311,9 +311,9 @@ html[data-intro="skip"] .tj-intro, .tj-intro[data-phase="gone"] { display: none;
   position: relative; width: 100vw; height: min(100dvh, 92vw);
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 11%, #000 89%, transparent 100%);
   mask-image: linear-gradient(180deg, transparent 0, #000 11%, #000 89%, transparent 100%);
-  transition: transform 1.2s var(--ease-out);
+  transition: transform .6s var(--ease-out);
 }
-.tj-intro[data-phase="leaving"] .tj-intro-media { transform: scale(1.05); }
+.tj-intro[data-phase="leaving"] .tj-intro-media { transform: scale(1.04); }
 /* הפריים הראשון, קטן ומטושטש, מוטמע בדף — משהו מופיע מיד, עוד לפני שהסרטון ירד */
 .tj-intro-media::before {
   content: ""; position: absolute; inset: 0;

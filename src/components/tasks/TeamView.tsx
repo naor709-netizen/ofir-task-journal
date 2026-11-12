@@ -661,7 +661,7 @@ function PersonCard({ p, s, todayKey, channel, onTasks, onAssign, onEdit, onShar
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 11.5, color: T.ink3 }}>
           {Ic.clock(12)} פעילות אחרונה: {relDay(s.lastActive, todayKey)}
-          <span style={{ marginInlineStart: "auto" }} className="num">{s.roots.open} פתוחות</span>
+          <span style={{ marginInlineStart: "auto" }}><span className="num">{s.roots.open}</span> פתוחות</span>
         </div>
 
         <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
@@ -1086,13 +1086,13 @@ export function TeamStrip({ todayKey, onOpenMember }: { todayKey: string; onOpen
               <Avatar name={m.name} color={m.color} size={34} />
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: "block", fontSize: 13.5, fontWeight: 700 }}>{m.name}</span>
-                <span className="num" style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11.5, color: T.ink2, marginTop: 2 }}>
+                <span style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, color: T.ink2, marginTop: 2 }}>
                   {loading ? <span style={{ color: T.ink3 }}>טוען…</span> : (
                     <>
-                      <span>{s.roots.open} פתוחות</span>
-                      <span>{s.roots.today} להיום</span>
-                      <span style={{ color: s.roots.overdue ? T.danger : T.ink2, fontWeight: s.roots.overdue ? 700 : 400 }}>{s.roots.overdue} באיחור</span>
-                      <span style={{ color: T.mint }}>{s.doneWeek.length} הושלמו השבוע</span>
+                      <span><span className="num">{s.roots.open}</span> פתוחות</span>
+                      <span><span className="num">{s.roots.today}</span> להיום</span>
+                      <span style={{ color: s.roots.overdue ? T.danger : T.ink2, fontWeight: s.roots.overdue ? 700 : 400 }}><span className="num">{s.roots.overdue}</span> באיחור</span>
+                      <span style={{ color: T.mint }}><span className="num">{s.doneWeek.length}</span> הושלמו השבוע</span>
                     </>
                   )}
                 </span>

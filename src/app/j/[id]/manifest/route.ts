@@ -18,9 +18,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     theme_color: PERSON_COLORS[member?.color ?? "teal"].solid,
     dir: "rtl",
     lang: "he",
+    // הלוגו של האפליקציה (התמונה) — אותו לוגו לכל היומנים
     icons: [
-      { src: `/j/${id}/icon?size=192`, sizes: "192x192", type: "image/png", purpose: "any maskable" },
-      { src: `/j/${id}/icon?size=512`, sizes: "512x512", type: "image/png", purpose: "any maskable" },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
   return new Response(JSON.stringify(body), {

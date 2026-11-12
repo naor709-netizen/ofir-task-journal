@@ -20,7 +20,7 @@ import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta, markManagerDevice } 
 import { MANAGER_ID, MANAGER_NAME, firstName, type PersonColor } from "@/lib/journals";
 import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
-import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, primaryBtn } from "./ui";
+import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, primaryBtn, IconChip, palVar, type Pal } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 import { NotifyCenter } from "./NotifyCenter";
@@ -41,6 +41,9 @@ const BASE_VIEWS: { key: ViewKey; label: string; icon: (s?: number) => React.Rea
 ];
 
 type StatusFilter = "all" | "active" | "progress" | "done";
+
+// משימה משותפת: שייכת ליומן אחר ושותפה איתי, או שלי ושיתפתי אותה
+const isSharedTask = (t: Task) => !!(t.ownerId || t.sharedWith?.length);
 
 export default function TaskJournal({ journalId, personName, personColor }: {
   journalId: string;
@@ -65,6 +68,11 @@ export default function TaskJournal({ journalId, personName, personColor }: {
       .map(firstName);
     return names.length ? `משותפת עם ${names.join(" ו")}` : null;
   };
+  // יש עם מי לשתף? אצל אופיר — כשיש צוות; אצל איש צוות — תמיד (לפחות אופיר)
+  const partners = people.filter((p) => p.id !== journalId);
+  const canShare = partners.length > 0;
+  // משימה משותפת חדשה: עם שותף/ה יחיד/ה — משותפת מראש; עם כמה — בוחרים בחלון המשימה
+  const createShared = () => createTask(partners.length === 1 ? [partners[0].id] : []);
 
   const VIEWS = useMemo(
     () => (isManager ? [BASE_VIEWS[0], { key: "team" as ViewKey, label: "הצוות", icon: Ic.users }, ...BASE_VIEWS.slice(1)] : BASE_VIEWS),
@@ -83,6 +91,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   const [natureFilter, setNatureFilter] = useState<Set<TaskNature>>(new Set());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [criticalOnly, setCriticalOnly] = useState(false);
+  const [sharedOnly, setSharedOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -208,6 +217,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
       if (statusFilter === "progress" && t.status !== "in_progress") return false;
       if (statusFilter === "done" && !isDone(t)) return false;
       if (criticalOnly && !t.critical) return false;
+      if (sharedOnly && !isSharedTask(t)) return false;
       if (selectedDate && t.dueDate !== selectedDate && t.endDate !== selectedDate) return false;
       return true;
     };
@@ -226,14 +236,16 @@ export default function TaskJournal({ journalId, personName, personColor }: {
       })) return false;
       return true;
     });
-  }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, search, selectedDate, catById]);
+  }, [journal, expandedCatFilter, natureFilter, statusFilter, criticalOnly, sharedOnly, search, selectedDate, catById]);
   const filteredTasks = overdueOnly
     ? baseFiltered.filter((root) => [root, ...flattenTasks(root.subtasks)].some((t) => !isDone(t) && t.dueDate && t.dueDate < todayKey))
     : baseFiltered;
 
   const criticalTasks = filteredTasks.filter((t) => t.critical && !isDone(t));
   // משימות שהושלמו לא נשארות ברשימה הראשית — הן עוברות לרשימה מרוכזת מתחת ללוח השנה
-  const regularTasks = filteredTasks.filter((t) => !isDone(t) && !t.critical);
+  // משימות משותפות פתוחות — מקבלות מקום משלהן בדשבורד, ולכן לא חוזרות ב"המשימות שלי"
+  const sharedTasks = filteredTasks.filter((t) => isSharedTask(t) && !isDone(t));
+  const regularTasks = filteredTasks.filter((t) => !isDone(t) && !t.critical && !isSharedTask(t));
   const doneTasks = [...filteredTasks.filter(isDone)]
     .sort((a, b) => (b.endDate ?? "").localeCompare(a.endDate ?? ""));
   const activeCount = filteredTasks.length - doneTasks.length;
@@ -350,9 +362,9 @@ export default function TaskJournal({ journalId, personName, personColor }: {
     });
   }
 
-  function createTask() {
+  function createTask(sharedWith?: string[]) {
     if (!journal) return;
-    const t = { ...emptyTask(), title: "", dueDate: todayKey };
+    const t: Task = { ...emptyTask(), title: "", dueDate: todayKey, ...(sharedWith?.length ? { sharedWith } : {}) };
     persist({ ...journal, tasks: [t, ...journal.tasks] });
     setFreshId(t.id);
     setOpenTaskId(t.id);
@@ -423,14 +435,14 @@ export default function TaskJournal({ journalId, personName, personColor }: {
 
   function clearFilters() {
     setCatFilter(new Set()); setNatureFilter(new Set()); setStatusFilter("all");
-    setCriticalOnly(false); setOverdueOnly(false); setSearch(""); setSelectedDate(null);
+    setCriticalOnly(false); setSharedOnly(false); setOverdueOnly(false); setSearch(""); setSelectedDate(null);
   }
 
   const openRoot = openTaskId && journal
     ? journal.tasks.find((root) => [root, ...flattenTasks(root.subtasks)].some((t) => t.id === openTaskId)) ?? null
     : null;
 
-  const filtersActive = catFilter.size > 0 || natureFilter.size > 0 || statusFilter !== "all" || criticalOnly || overdueOnly || !!search.trim() || !!selectedDate;
+  const filtersActive = catFilter.size > 0 || natureFilter.size > 0 || statusFilter !== "all" || criticalOnly || sharedOnly || overdueOnly || !!search.trim() || !!selectedDate;
 
   // ---- GSAP choreography ----
   const rootRef = useRef<HTMLDivElement>(null);
@@ -549,7 +561,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
             <span className="tj-notify-label">{phoneReady ? (telegramLinked ? "טלגרם מחובר" : pushState === "on" ? "התראות פעילות" : "SMS מחובר") : "התראות לטלפון"}</span>
           </button>
           {!isTeam && (
-            <button onClick={createTask} className="tj-newbtn" style={{ ...primaryBtn, padding: "6px 7px 6px 18px", height: 40 }}>
+            <button onClick={() => createTask()} className="tj-newbtn" style={{ ...primaryBtn, padding: "6px 7px 6px 18px", height: 40 }}>
               <span className="tj-newbtn-orb" style={{
                 width: 27, height: 27, borderRadius: 99, background: "rgba(255,255,255,0.2)",
                 display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
@@ -765,6 +777,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
             <FilterToggle on={criticalOnly} onClick={() => setCriticalOnly(!criticalOnly)} icon={Ic.flame(14)} label="רק משימות קריטיות" />
             <FilterToggle on={overdueOnly} onClick={() => setOverdueOnly(!overdueOnly)} icon={Ic.alert(14)} label="רק משימות באיחור" />
+            {canShare && <FilterToggle on={sharedOnly} onClick={() => setSharedOnly(!sharedOnly)} icon={Ic.users(14)} label="רק משימות משותפות" tone="accent" />}
           </div>
 
           {upcomingReminders.length > 0 && (
@@ -831,13 +844,13 @@ export default function TaskJournal({ journalId, personName, personColor }: {
               <div className="tj-kpis" style={{
                 display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10,
               }}>
-                <StatCell label="משימות פתוחות" value={openCount} icon={Ic.layers(16)}
+                <StatCell label="משימות פתוחות" value={openCount} icon={Ic.layers(16)} pal="blue"
                   active={statusFilter === "active"} onClick={() => setStatusFilter(statusFilter === "active" ? "all" : "active")} />
-                <StatCell label="בתהליך" value={inProgressCount} icon={Ic.progress(16)} tone="amber"
+                <StatCell label="בתהליך" value={inProgressCount} icon={Ic.progress(16)} pal="purple"
                   active={statusFilter === "progress"} onClick={() => setStatusFilter(statusFilter === "progress" ? "all" : "progress")} />
-                <StatCell label="קריטיות" value={criticalCount} icon={Ic.flame(16)} tone={criticalCount > 0 ? "danger" : undefined}
+                <StatCell label="קריטיות" value={criticalCount} icon={Ic.flame(16)} pal="crimson" tone={criticalCount > 0 ? "danger" : undefined}
                   active={criticalOnly} onClick={() => setCriticalOnly(!criticalOnly)} />
-                <StatCell label="באיחור" value={overdueCount} icon={Ic.alert(16)} tone={overdueCount > 0 ? "danger" : undefined}
+                <StatCell label="באיחור" value={overdueCount} icon={Ic.alert(16)} pal="pink" tone={overdueCount > 0 ? "danger" : undefined}
                   active={overdueOnly} onClick={() => setOverdueOnly(!overdueOnly)} />
               </div>
 
@@ -848,6 +861,44 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                   setView("team");
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }} />
+              )}
+
+              {/* ---- משימות משותפות: מופיעות אצל שני הצדדים ---- */}
+              {canShare && (
+                <section className="tj-card tj-shared" style={{ ...card, padding: 16 }}>
+                  <SectionHead icon={Ic.users(15)} title="משימות משותפות" count={sharedTasks.length} pal="pink"
+                    extra={
+                      <button onClick={createShared} style={{ ...primaryBtn, marginInlineStart: "auto", height: 34, padding: "0 14px", fontSize: 12.5 }}>
+                        {Ic.plus(13)} משימה משותפת
+                      </button>
+                    } />
+                  {sharedTasks.length === 0 ? (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 12, background: T.bg2, borderRadius: 14, padding: "12px 14px",
+                      fontSize: 12.5, color: T.ink2, lineHeight: 1.6,
+                    }}>
+                      <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                        {[{ id: journalId, name: personName, color: personColor }, ...partners.slice(0, 2)].map((p, i) => (
+                          <span key={p.id} style={{ marginInlineStart: i ? -8 : 0, borderRadius: 99, boxShadow: "0 0 0 2px var(--tj-bg2)", display: "inline-flex" }}>
+                            <Avatar name={p.name} color={p.color} size={28} />
+                          </span>
+                        ))}
+                      </span>
+                      <span>
+                        {filtersActive && sharedOnly === false ? "אין משימות משותפות שתואמות את הסינון. " : "עוד אין משימות משותפות. "}
+                        משימה משותפת מופיעה ביומן של {partners.length === 1 ? `שניכם — ${firstName(personName)} ו${firstName(partners[0].name)}` : "כל מי ששותף בה"}, וכל אחד יכול לעדכן ולסמן.
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {sharedTasks.map((t) => (
+                        <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={sharedLabelOf(t)}
+                          critical={t.critical} todayKey={todayKey}
+                          onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
+                      ))}
+                    </div>
+                  )}
+                </section>
               )}
 
               {/* critical strip */}
@@ -882,7 +933,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                           כל המשימות הושלמו — כל הכבוד!
                         </div>
                       ) : (
-                        <Empty filtersActive={filtersActive} onCreate={createTask} />
+                        <Empty filtersActive={filtersActive} onCreate={() => createTask()} />
                       )
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -901,7 +952,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                 <div className="tj-dash-cal" style={{ width: 452, flexShrink: 0, position: "sticky", top: 70 }}>
                   <section className="tj-card" style={{ ...card, padding: 16 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-                      <HeadIcon icon={Ic.calendar(15)} />
+                      <HeadIcon icon={Ic.calendar(15)} pal="purple" />
                       <h2 style={sectionH2}>לוח שנה</h2>
                       <div style={{ display: "flex", alignItems: "center", gap: 4, marginInlineStart: "auto" }}>
                         <NavBtn label="החודש הקודם" onClick={() => { const m = calMonth - 1; if (m < 0) { setCalMonth(11); setCalYear(calYear - 1); } else setCalMonth(m); }}>{Ic.chevR(14)}</NavBtn>
@@ -1004,7 +1055,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
         />
       )}
 
-      {installOpen && <InstallSheet journalId={journalId} personName={personName} onClose={() => setInstallOpen(false)} />}
+      {installOpen && <InstallSheet personName={personName} onClose={() => setInstallOpen(false)} />}
 
       {notifyOpen && (
         <NotifyCenter
@@ -1024,7 +1075,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
         .tj-catrow:hover .tj-catdel, .tj-catrow:focus-within .tj-catdel { opacity: 0.75; }
         @media (max-width: 520px) { .tj-synctext { display: none; } }
         @media (max-width: 1180px) {
-          .tj-dash-cols { flex-direction: column !important; }
+          .tj-dash-cols { flex-direction: column !important; align-items: stretch !important; }
           .tj-dash-cal { width: 100% !important; position: static !important; }
         }
         @media (max-width: 900px) {
@@ -1070,26 +1121,19 @@ const sectionH2: React.CSSProperties = {
   margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em",
 };
 
-function HeadIcon({ icon, tone }: { icon: React.ReactNode; tone?: "danger" | "mint" }) {
-  const c = tone === "danger" ? "var(--tj-danger)" : tone === "mint" ? "var(--tj-mint)" : "var(--tj-accent)";
-  return (
-    <span style={{
-      width: 32, height: 32, borderRadius: 11, flexShrink: 0, color: "#fff",
-      background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 68%, #000))`,
-      boxShadow: `0 8px 18px -10px ${alpha(c, 90)}`,
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-    }}>{icon}</span>
-  );
+// "הלוגו" של כל פיצ'ר — צבע קבוע מלוח הצבעים (DESIGN.md §2)
+function HeadIcon({ icon, pal = "blue" }: { icon: React.ReactNode; pal?: Pal }) {
+  return <IconChip pal={pal} size={32}>{icon}</IconChip>;
 }
 
-function SectionHead({ icon, title, count, tone, extra, tight }: {
-  icon: React.ReactNode; title: string; count?: number; tone?: "danger" | "mint"; extra?: React.ReactNode; tight?: boolean;
+function SectionHead({ icon, title, count, tone, extra, tight, pal }: {
+  icon: React.ReactNode; title: string; count?: number; tone?: "danger" | "mint"; extra?: React.ReactNode; tight?: boolean; pal?: Pal;
 }) {
   const c = tone === "danger" ? T.danger : tone === "mint" ? T.mint : T.accent;
   const bg = tone === "danger" ? T.dangerSoft : tone === "mint" ? T.mintSoft : T.accentSoft;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: tight ? 0 : 13 }}>
-      <HeadIcon icon={icon} tone={tone} />
+      <HeadIcon icon={icon} pal={pal ?? (tone === "danger" ? "crimson" : tone === "mint" ? "lime" : "blue")} />
       <h2 style={sectionH2}>{title}</h2>
       {count !== undefined && (
         <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: c, background: bg, borderRadius: 99, padding: "2px 10px" }}>
@@ -1135,7 +1179,18 @@ function Header({ sync, onSyncClick, personName, personColor, isManager, teamCou
         </div>
       </div>
       <div className="tj-brandtext" style={{ width: 1, height: 30, background: T.line, marginInline: 4 }} />
-      <Avatar name={personName} color={personColor} size={36} />
+      {/* הלוגו של האפליקציה: ביומן של אופיר הוא גם התמונה שלו; אצל איש צוות — האווטר האישי */}
+      {isManager ? (
+        <span className="tj-applogo" style={{
+          width: 40, height: 40, borderRadius: 13, overflow: "hidden", flexShrink: 0, display: "inline-flex",
+          boxShadow: `0 0 0 2px var(--tj-surface), 0 0 0 3.5px ${alpha("var(--tj-accent)", 55)}, 0 8px 18px -10px ${T.glow}`,
+        }}>
+          <Image src="/logo-face.png" alt="היומן השיתופי של אופיר" width={40} height={40} priority
+            style={{ width: 40, height: 40, objectFit: "cover" }} />
+        </span>
+      ) : (
+        <Avatar name={personName} color={personColor} size={36} />
+      )}
       <div style={{ lineHeight: 1.2, minWidth: 0 }}>
         <h1 style={{
           margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: T.ink,
@@ -1147,10 +1202,14 @@ function Header({ sync, onSyncClick, personName, personColor, isManager, teamCou
           {isManager ? (
             <>
               <span style={{ color: T.accent, display: "inline-flex" }}>{Ic.crown(11)}</span>
-              {teamCount > 0 ? `מנהל · ${teamCount} ${teamCount === 1 ? "איש צוות" : "אנשי צוות"}` : "יומן המשימות"}
+              {teamCount > 0 ? `מנהל · ${teamCount} ${teamCount === 1 ? "איש צוות" : "אנשי צוות"}` : "היומן השיתופי"}
             </>
           ) : (
-            <>הצוות של {MANAGER_NAME}</>
+            <>
+              <Image src="/logo-face.png" alt="" width={16} height={16}
+                style={{ width: 16, height: 16, borderRadius: 99, objectFit: "cover", boxShadow: `0 0 0 1px ${T.line}` }} />
+              היומן השיתופי של {MANAGER_NAME}
+            </>
           )}
           <span className="num" style={{ opacity: 0.6, letterSpacing: "0.12em", fontSize: 9.5 }}>· V5</span>
         </div>
@@ -1214,7 +1273,7 @@ function WeekInsights({ allFlat, catById, todayKey }: { allFlat: Task[]; catById
 
   return (
     <section className="tj-card" style={{ ...card, padding: 16, marginTop: 14 }}>
-      <SectionHead icon={Ic.chart(15)} title="השבוע שלך" extra={
+      <SectionHead icon={Ic.chart(15)} title="השבוע שלך" pal="lavender" extra={
         <span style={{
           marginInlineStart: "auto", fontSize: 11.5, fontWeight: 700, borderRadius: 99, padding: "3px 10px",
           color: trend >= 0 ? T.mint : T.amber, background: trend >= 0 ? T.mintSoft : T.amberSoft,
@@ -1240,14 +1299,14 @@ function WeekInsights({ allFlat, catById, todayKey }: { allFlat: Task[]; catById
       <DayBars
         height={170}
         days={days.map((d) => ({ short: dm(d), long: `${HE_WEEKDAYS_FULL[new Date(`${d}T12:00:00`).getDay()]} ${dm(d)}` }))}
-        up={{ label: "נסגרו", color: "var(--tj-mint)", values: doneSeries }}
-        down={{ label: "נפתחו", color: "var(--tj-accent)", values: newSeries }}
+        up={{ label: "נסגרו", color: "var(--pal-lime)", values: doneSeries }}
+        down={{ label: "נפתחו", color: "var(--pal-blue)", values: newSeries }}
         ariaLabel={`ב-14 הימים האחרונים נסגרו ${doneSeries.reduce((x, y) => x + y, 0)} משימות ונפתחו ${newSeries.reduce((x, y) => x + y, 0)}`}
       />
       <div style={{ marginTop: 8 }}>
         <DayBarsLegend items={[
-          { label: "נסגרו", color: "var(--tj-mint)", total: doneSeries.reduce((x, y) => x + y, 0) },
-          { label: "נפתחו", color: "var(--tj-accent)", total: newSeries.reduce((x, y) => x + y, 0) },
+          { label: "נסגרו", color: "var(--pal-lime)", total: doneSeries.reduce((x, y) => x + y, 0) },
+          { label: "נפתחו", color: "var(--pal-blue)", total: newSeries.reduce((x, y) => x + y, 0) },
         ]} />
       </div>
     </section>
@@ -1627,11 +1686,11 @@ function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
   );
 }
 
-function StatCell({ label, value, icon, tone, active, onClick }: {
-  label: string; value: number; icon: React.ReactNode; tone?: "danger" | "amber"; active: boolean; onClick: () => void;
+function StatCell({ label, value, icon, tone, pal, active, onClick }: {
+  label: string; value: number; icon: React.ReactNode; tone?: "danger"; pal: Pal; active: boolean; onClick: () => void;
 }) {
-  // לכל מדד גוון משלו; אדום רק כשיש באמת בעיה
-  const c = tone === "danger" ? "var(--tj-danger)" : tone === "amber" ? "var(--tj-amber)" : "var(--tj-accent)";
+  // לכל מדד צבע קבוע מהלוח; המספר נצבע אדום רק כשיש באמת בעיה
+  const c = palVar(pal);
   return (
     <button onClick={onClick} aria-pressed={active} title={active ? "לחיצה מבטלת את הסינון" : `סינון: ${label}`} className="tj-stat" style={{
       position: "relative", overflow: "hidden",
@@ -1641,12 +1700,7 @@ function StatCell({ label, value, icon, tone, active, onClick }: {
       background: `linear-gradient(150deg, ${alpha(c, active ? 20 : 12)} 0%, ${alpha(c, active ? 8 : 3)} 70%), var(--tj-surface)`,
       boxShadow: active ? `0 12px 26px -16px ${alpha(c, 80)}` : "inset 0 1px 0 var(--tj-bezel)",
     }}>
-      <span style={{
-        width: 42, height: 42, borderRadius: 13, flexShrink: 0, color: "#fff",
-        background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 70%, #000))`,
-        boxShadow: `0 10px 20px -10px ${alpha(c, 90)}`,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-      }}>{icon}</span>
+      <IconChip pal={pal} size={42} radius={13}>{icon}</IconChip>
       <span style={{ minWidth: 0 }}>
         <span className="num tj-kpi-num" style={{ display: "block", fontSize: 28, fontWeight: 800, lineHeight: 1, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
         <span style={{ display: "block", fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
@@ -1655,17 +1709,18 @@ function StatCell({ label, value, icon, tone, active, onClick }: {
   );
 }
 
-function FilterToggle({ on, onClick, icon, label }: { on: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function FilterToggle({ on, onClick, icon, label, tone = "danger" }: { on: boolean; onClick: () => void; icon: React.ReactNode; label: string; tone?: "danger" | "accent" }) {
+  const c = tone === "accent" ? T.accent : T.danger;
   return (
     <button onClick={onClick} aria-pressed={on} style={{
       display: "flex", alignItems: "center", gap: 8, width: "100%",
-      background: on ? T.dangerSoft : "transparent",
-      border: `1px solid ${on ? alpha(T.danger, 30) : T.line}`,
+      background: on ? alpha(c, 12) : "transparent",
+      border: `1px solid ${on ? alpha(c, 30) : T.line}`,
       borderRadius: 11, padding: "8px 10px", fontSize: 12.5, cursor: "pointer",
-      color: on ? T.danger : T.ink2, fontWeight: on ? 600 : 500,
+      color: on ? c : T.ink2, fontWeight: on ? 600 : 500,
       fontFamily: "inherit",
     }}>
-      <span style={{ color: T.danger, display: "inline-flex" }}>{icon}</span>
+      <span style={{ color: c, display: "inline-flex" }}>{icon}</span>
       {label}
     </button>
   );

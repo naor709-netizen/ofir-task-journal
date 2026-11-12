@@ -10,17 +10,19 @@ import {
   STATUS_LABELS, STATUS_COLORS, NATURE_LABELS, NATURE_COLORS,
   HE_WEEKDAYS, HE_WEEKDAYS_FULL,
 } from "@/lib/tasks";
-import { T, card, alpha, Ic, StatusIcon } from "./ui";
+import { T, card, alpha, Ic, StatusIcon, IconChip, palVar, type Pal } from "./ui";
 import { Donut, Legend, DayBars, DayBarsLegend, Columns, SplitBars, Heatmap } from "./charts";
 
 gsap.registerPlugin(Flip, useGSAP);
 
-// chart fills snapped to the dark-band (validated); UI text keeps STATUS_COLORS
+// צבעי הגרפים — מלוח הצבעים (נבדקו ב-validate_palette: הפרדה גם לעיוורי צבעים).
+// הבהירים מקבלים קו מתאר ומספרים/מקרא, כי על לבן הם מתחת ל-3:1. טקסט נשאר ב-STATUS_COLORS.
 const STATUS_FILL: Record<TaskStatus, string> = {
-  todo: "#8A97A8",
-  in_progress: "#C07F0E",
-  done: "#0FA47E",
+  todo: "var(--pal-purple)",
+  in_progress: "var(--pal-blue)",
+  done: "var(--pal-lime)",
 };
+const HEAT_FILLS = [alpha("var(--tj-ink3)", 11), "var(--heat-1)", "var(--heat-2)", "var(--heat-3)", "var(--heat-4)"];
 
 interface ViewProps {
   roots: Task[];
@@ -29,18 +31,13 @@ interface ViewProps {
   onOpen: (id: string) => void;
 }
 
-function SectionCard({ title, icon, badge, children, extra }: {
-  title: string; icon: React.ReactNode; badge?: React.ReactNode; children: React.ReactNode; extra?: React.ReactNode;
+function SectionCard({ title, icon, badge, children, extra, pal = "blue" }: {
+  title: string; icon: React.ReactNode; badge?: React.ReactNode; children: React.ReactNode; extra?: React.ReactNode; pal?: Pal;
 }) {
   return (
     <section className="tj-card" style={{ ...card, padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <span style={{
-          width: 32, height: 32, borderRadius: 11, color: "#fff", flexShrink: 0,
-          background: "linear-gradient(140deg, var(--tj-accent), color-mix(in srgb, var(--tj-accent) 68%, #000))",
-          boxShadow: "0 8px 18px -10px color-mix(in srgb, var(--tj-accent) 90%, transparent)",
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-        }}>{icon}</span>
+        <IconChip pal={pal} size={32}>{icon}</IconChip>
         <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>{title}</h2>
         {badge}
         {extra}
@@ -114,7 +111,7 @@ export function WeekView({ roots, catById, todayKey, onOpen }: ViewProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {overdue.length > 0 && (
-        <SectionCard title="באיחור" icon={<span style={{ color: T.danger, display: "inline-flex" }}>{Ic.alert(16)}</span>}
+        <SectionCard title="באיחור" icon={Ic.alert(16)} pal="crimson"
           badge={<span className="num" style={{ fontSize: 11.5, color: T.danger, background: T.dangerSoft, borderRadius: 99, padding: "2px 9px" }}>{overdue.length}</span>}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
             {overdue.map((t) => (
@@ -124,7 +121,7 @@ export function WeekView({ roots, catById, todayKey, onOpen }: ViewProps) {
         </SectionCard>
       )}
 
-      <SectionCard title="שבעת הימים הקרובים" icon={Ic.week(16)}>
+      <SectionCard title="שבעת הימים הקרובים" icon={Ic.week(16)} pal="blue">
         <div className="tj-week" style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 8 }}>
           {days.map(({ key, date }, i) => {
             const dayTasks = all.filter((t) => t.dueDate === key);
@@ -209,7 +206,7 @@ export function TableView({ roots, catById, todayKey, onOpen, onCycle }: ViewPro
   }
 
   return (
-    <SectionCard title="טבלת משימות" icon={Ic.table(16)}
+    <SectionCard title="טבלת משימות" icon={Ic.table(16)} pal="purple"
       badge={<span className="num" style={{ fontSize: 11.5, color: T.ink2, background: T.surface2, borderRadius: 99, padding: "2px 9px" }}>{roots.length}</span>}>
       <div style={{ overflowX: "auto", margin: "0 -16px", padding: "0 16px" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
@@ -276,7 +273,7 @@ export function TableView({ roots, catById, todayKey, onOpen, onCycle }: ViewPro
                       title="לחיצה מקדמת סטטוס"
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
-                        background: `${STATUS_FILL[t.status]}26`, color: STATUS_COLORS[t.status],
+                        background: alpha(STATUS_COLORS[t.status], 13), color: STATUS_COLORS[t.status],
                         border: "none", borderRadius: 99, padding: "4px 11px",
                         fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
                       }}>
@@ -473,7 +470,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
 
   if (total === 0) {
     return (
-      <SectionCard title="אנליטיקות" icon={Ic.chart(16)}>
+      <SectionCard title="אנליטיקות" icon={Ic.chart(16)} pal="lavender">
         <div style={{ textAlign: "center", padding: 30, color: T.ink3, fontSize: 13 }}>אין נתונים עדיין — הוסיפו משימות</div>
       </SectionCard>
     );
@@ -482,7 +479,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="tj-stat-top" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr)", gap: 14 }}>
-        <SectionCard title="מצב המשימות" icon={Ic.checkCircle(16)}>
+        <SectionCard title="מצב המשימות" icon={Ic.checkCircle(16)} pal="lime">
           <div style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
             <Donut
               slices={byStatus}
@@ -499,14 +496,14 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
           </div>
         </SectionCard>
         <div className="tj-stat-kpis" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <BigStat label="הושלמו" value={doneCount} tone="mint" icon={Ic.checkCircle(17)} />
-          <BigStat label="פעילות" value={total - doneCount} tone="accent" icon={Ic.layers(17)} />
-          <BigStat label="באיחור" value={overdue} tone={overdue ? "danger" : "mint"} icon={Ic.alert(17)} />
-          <BigStat label="הושלמו בזמן" value={onTime === null ? "—" : `${onTime}%`} tone="amber" icon={Ic.target(17)} />
+          <BigStat label="הושלמו" value={doneCount} pal="lime" icon={Ic.checkCircle(17)} />
+          <BigStat label="פעילות" value={total - doneCount} pal="blue" icon={Ic.layers(17)} />
+          <BigStat label="באיחור" value={overdue} pal="crimson" danger={overdue > 0} icon={Ic.alert(17)} />
+          <BigStat label="הושלמו בזמן" value={onTime === null ? "—" : `${onTime}%`} pal="cream" icon={Ic.target(17)} />
         </div>
       </div>
 
-      <SectionCard title="קצב — 30 הימים האחרונים" icon={Ic.activity(16)}
+      <SectionCard title="קצב — 30 הימים האחרונים" icon={Ic.activity(16)} pal="blue"
         extra={<div style={{ marginInlineStart: "auto" }}><DayBarsLegend items={[
           { label: "נסגרו", color: STATUS_FILL.done, total: done30 },
           { label: "נפתחו", color: "var(--tj-accent)", total: new30 },
@@ -520,7 +517,7 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
       </SectionCard>
 
       <div className="tj-statgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
-        <SectionCard title="לפי קטגוריה" icon={Ic.layers(16)}>
+        <SectionCard title="לפי קטגוריה" icon={Ic.layers(16)} pal="pink">
           {byCat.length === 0 ? (
             <div style={{ color: T.ink3, fontSize: 12, padding: 10 }}>אין משימות</div>
           ) : (
@@ -533,16 +530,16 @@ export function StatsView({ roots, catById, todayKey }: Omit<ViewProps, "onOpen"
             </>
           )}
         </SectionCard>
-        <SectionCard title={`עומס לפי חודש · ${year}`} icon={Ic.calendar(16)}>
-          <Columns items={byMonth} highlight={curMonth} height={214} ariaLabel={`משימות לפי חודש יעד בשנת ${year}`} />
+        <SectionCard title={`עומס לפי חודש · ${year}`} icon={Ic.calendar(16)} pal="purple">
+          <Columns items={byMonth} highlight={curMonth} height={214} color="var(--pal-purple)" ariaLabel={`משימות לפי חודש יעד בשנת ${year}`} />
         </SectionCard>
       </div>
 
-      <SectionCard title="מפת פעילות — 12 שבועות" icon={Ic.grid(16)}
+      <SectionCard title="מפת פעילות — 12 שבועות" icon={Ic.grid(16)} pal="plum"
         badge={<span style={{ fontSize: 11.5, fontWeight: 700, color: T.mint, background: T.mintSoft, borderRadius: 99, padding: "2px 10px" }}><span className="num">{activeDays}</span> ימים פעילים</span>}>
         <div className="tj-heat" style={{ display: "flex", gap: 22, alignItems: "flex-start" }}>
           <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-            <Heatmap weeks={weeks} dayLabels={HE_WEEKDAYS} color={STATUS_FILL.done} todayKey={todayKey}
+            <Heatmap weeks={weeks} dayLabels={HE_WEEKDAYS} fills={HEAT_FILLS} todayKey={todayKey}
               ariaLabel={`השלמות לפי יום ב-12 השבועות האחרונים: ${activeDays} ימים עם השלמות`} />
           </div>
           <div className="tj-heat-side" style={{ flex: "0 0 210px", display: "grid", gap: 8 }}>
@@ -574,22 +571,17 @@ function MiniStat({ label, value, sub }: { label: string; value: React.ReactNode
   );
 }
 
-function BigStat({ label, value, tone, icon }: { label: string; value: number | string; tone: "mint" | "accent" | "danger" | "amber"; icon: React.ReactNode }) {
-  const c = tone === "mint" ? "var(--tj-mint)" : tone === "danger" ? "var(--tj-danger)" : tone === "amber" ? "var(--tj-amber)" : "var(--tj-accent)";
+function BigStat({ label, value, pal, danger, icon }: { label: string; value: number | string; pal: Pal; danger?: boolean; icon: React.ReactNode }) {
+  const c = palVar(pal);
   return (
     <div className="tj-card" style={{
       ...card, padding: "16px 16px 14px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10,
       background: `linear-gradient(150deg, ${alpha(c, 14)} 0%, ${alpha(c, 3)} 70%), var(--tj-surface)`,
       border: `1px solid ${alpha(c, 20)}`,
     }}>
-      <span style={{
-        width: 38, height: 38, borderRadius: 12, color: "#fff",
-        background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 68%, #000))`,
-        boxShadow: `0 10px 20px -10px ${alpha(c, 90)}`,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-      }}>{icon}</span>
+      <IconChip pal={pal} size={38} radius={12}>{icon}</IconChip>
       <span>
-        <span className="num" style={{ display: "block", fontSize: 32, fontWeight: 800, lineHeight: 1, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
+        <span className="num" style={{ display: "block", fontSize: 32, fontWeight: 800, lineHeight: 1, color: danger ? T.danger : T.ink }}>{value}</span>
         <span style={{ display: "block", fontSize: 12.5, color: T.ink2, fontWeight: 600, marginTop: 4 }}>{label}</span>
       </span>
     </div>

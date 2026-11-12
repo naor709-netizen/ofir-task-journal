@@ -338,6 +338,14 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
             </Field>
           )}
 
+          {isRoot && share && shareCandidates.length === 0 && (
+            <Field label="משימה משותפת" icon={Ic.users(13)}>
+              <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.55 }}>
+                כדי לשתף משימה, מוסיפים קודם איש צוות בטאב ״הצוות״ — ואז היא תופיע ביומן של שניכם.
+              </div>
+            </Field>
+          )}
+
           {/* nature */}
           <Field label="מהות" icon={Ic.flag(13)}>
             <div style={{ display: "inline-flex", gap: 6 }}>

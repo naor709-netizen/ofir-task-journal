@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { GLOBAL_CSS } from "./global-css";
 import { ToastProvider } from "@/components/Toast";
 import { INSTALL_CAPTURE_SCRIPT } from "@/lib/install";
+import { INTRO_SKIP_SCRIPT } from "@/lib/intro";
+import IntroSplash from "@/components/IntroSplash";
 
 export const metadata: Metadata = {
   title: "יומן המשימות של אופיר",
@@ -9,7 +11,10 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "היומן של אופיר" },
   icons: {
-    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    icon: [
+      { url: "/favicon-64.png", sizes: "64x64", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
@@ -37,10 +42,11 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html:
               `try{var t=localStorage.getItem("ofir-theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.dataset.theme="dark"}catch(e){}` +
-              INSTALL_CAPTURE_SCRIPT +
+              INSTALL_CAPTURE_SCRIPT + INTRO_SKIP_SCRIPT +
               `var f=document.createElement("link");f.rel="stylesheet";f.href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";document.head.appendChild(f);`,
           }}
         />
+        <IntroSplash />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

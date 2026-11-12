@@ -21,7 +21,7 @@ import { parseQuickAdd } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
 import {
   T, alpha, card, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, Toggle, Sheet,
-  primaryBtn, ghostBtn, softBtn, useTilt,
+  primaryBtn, ghostBtn, softBtn, useTilt, IconChip, type Pal,
 } from "./ui";
 import { TaskModal } from "./TaskModal";
 
@@ -274,10 +274,10 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
 
         {!noMembers && (
           <div className="tj-team-kpis" style={{ position: "relative", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginTop: 18 }}>
-            <MiniStat label="פתוחות בצוות" value={teamOpen} icon={Ic.layers(15)} />
-            <MiniStat label="להיום" value={teamToday} icon={Ic.target(15)} />
-            <MiniStat label="הושלמו השבוע" value={teamDoneWeek} icon={Ic.checkCircle(15)} tone="mint" />
-            <MiniStat label="באיחור" value={teamOverdue} icon={Ic.alert(15)} tone={teamOverdue ? "danger" : undefined} />
+            <MiniStat label="פתוחות בצוות" value={teamOpen} icon={Ic.layers(15)} pal="sky" />
+            <MiniStat label="להיום" value={teamToday} icon={Ic.target(15)} pal="cream" />
+            <MiniStat label="הושלמו השבוע" value={teamDoneWeek} icon={Ic.checkCircle(15)} pal="lime" />
+            <MiniStat label="באיחור" value={teamOverdue} icon={Ic.alert(15)} pal="pink" tone={teamOverdue ? "danger" : undefined} />
           </div>
         )}
       </section>
@@ -331,7 +331,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
             <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
               {/* ---- דורש תשומת לב ---- */}
               <section className="tj-card" style={{ ...card, padding: 16 }}>
-                <Head icon={Ic.alert(15)} title="דורש תשומת לב" count={attention.length} tone={attention.length ? "danger" : "mint"} />
+                <Head pal="crimson" icon={Ic.alert(15)} title="דורש תשומת לב" count={attention.length} tone={attention.length ? "danger" : "mint"} />
                 {attention.length === 0 ? (
                   <EmptyLine icon={Ic.sparkle(16)} text="אין משימות באיחור או קריטיות אצל הצוות." />
                 ) : (
@@ -349,7 +349,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
 
               {/* ---- היום, לפי אדם ---- */}
               <section className="tj-card" style={{ ...card, padding: 16 }}>
-                <Head icon={Ic.target(15)} title="היום בצוות" />
+                <Head pal="blue" icon={Ic.target(15)} title="היום בצוות" />
                 <div className="tj-lanes no-scrollbar" style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "minmax(200px, 1fr)", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
                   {people.map((p) => {
                     const list = [...stats[p.id].todayAll].sort((a, b) => Number(isDone(a)) - Number(isDone(b)));
@@ -393,7 +393,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
             <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
               {/* ---- פעילות אחרונה ---- */}
               <section className="tj-card" style={{ ...card, padding: 16 }}>
-                <Head icon={Ic.activity(15)} title="פעילות אחרונה" />
+                <Head pal="lavender" icon={Ic.activity(15)} title="פעילות אחרונה" />
                 {feed.length === 0 ? (
                   <EmptyLine icon={Ic.inbox(16)} text="עוד אין פעילות בשבועיים האחרונים." />
                 ) : (
@@ -428,7 +428,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
 
               {/* ---- ניהול הצוות: מי בצוות, עריכה, קישור, מחיקה ---- */}
               <section id="tj-team-manage" className="tj-card" style={{ ...card, padding: 16 }}>
-                <Head icon={Ic.users(15)} title="ניהול הצוות" count={members.length} />
+                <Head pal="purple" icon={Ic.users(15)} title="ניהול הצוות" count={members.length} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {meta.roster.members.map((m) => {
                     const ch = phoneChannel(m.id);
@@ -462,7 +462,7 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
 
               {/* ---- הגדרות מנהל ---- */}
               <section className="tj-card" style={{ ...card, padding: 16 }}>
-                <Head icon={Ic.sliders(15)} title="עדכונים לטלפון" />
+                <Head pal="sky" icon={Ic.sliders(15)} title="עדכונים לטלפון" />
                 <button onClick={onOpenNotify} style={{
                   display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "start",
                   background: managerChannel ? T.mintSoft : T.accentSoft, border: "none", borderRadius: 14,
@@ -557,17 +557,12 @@ export function TeamView({ todayKey, onOpenOwnTask, onOpenNotify, focusMember }:
 
 // ============ pieces ============
 
-function Head({ icon, title, count, tone }: { icon: React.ReactNode; title: string; count?: number; tone?: "danger" | "mint" }) {
+function Head({ icon, title, count, tone, pal = "blue" }: { icon: React.ReactNode; title: string; count?: number; tone?: "danger" | "mint"; pal?: Pal }) {
   const c = tone === "danger" ? T.danger : tone === "mint" ? T.mint : T.accent;
   const bg = tone === "danger" ? T.dangerSoft : tone === "mint" ? T.mintSoft : T.accentSoft;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
-      <span style={{
-        width: 32, height: 32, borderRadius: 11, color: "#fff", flexShrink: 0,
-        background: `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 68%, #000))`,
-        boxShadow: `0 8px 18px -10px ${alpha(c, 90)}`,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-      }}>{icon}</span>
+      <IconChip pal={pal} size={32}>{icon}</IconChip>
       <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>{title}</h3>
       {count !== undefined && (
         <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: c, background: bg, borderRadius: 99, padding: "2px 10px" }}>{count}</span>
@@ -584,8 +579,9 @@ function EmptyLine({ icon, text }: { icon: React.ReactNode; text: string }) {
   );
 }
 
-function MiniStat({ label, value, icon, tone }: { label: string; value: number; icon: React.ReactNode; tone?: "danger" | "mint" }) {
-  const c = tone === "danger" ? "#FDA4AF" : tone === "mint" ? "#6EE7B7" : "#BFDBFE";
+// על הכרזה הכהה: אייקון בצבע מהלוח (הבהירים בולטים יפה על כחול עמוק)
+function MiniStat({ label, value, icon, tone, pal }: { label: string; value: number; icon: React.ReactNode; tone?: "danger"; pal: Pal }) {
+  const c = `var(--pal-${pal})`;
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 10, borderRadius: 16, padding: "11px 13px",
@@ -594,7 +590,7 @@ function MiniStat({ label, value, icon, tone }: { label: string; value: number; 
     }}>
       <span style={{ color: c, display: "inline-flex" }}>{icon}</span>
       <span>
-        <span className="num" style={{ display: "block", fontSize: 24, fontWeight: 800, lineHeight: 1, color: tone === "danger" && value ? "#FDA4AF" : "#fff" }}>{value}</span>
+        <span className="num" style={{ display: "block", fontSize: 24, fontWeight: 800, lineHeight: 1, color: tone === "danger" && value ? "#FFB3C9" : "#fff" }}>{value}</span>
         <span style={{ display: "block", fontSize: 11.5, color: "rgba(255,255,255,0.82)", marginTop: 3 }}>{label}</span>
       </span>
     </div>
@@ -739,7 +735,7 @@ function PaceChart({ people, stats, todayKey }: { people: Person[]; stats: Recor
   return (
     <section className="tj-card" style={{ ...card, padding: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-        <span style={{ width: 30, height: 30, borderRadius: 10, background: T.accentSoft, color: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{Ic.chart(15)}</span>
+        <IconChip pal="lavender" size={30} radius={10}>{Ic.chart(15)}</IconChip>
         <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>משימות שהושלמו · 14 ימים</h3>
         <span style={{ fontSize: 11.5, color: T.ink3, marginInlineStart: "auto" }}>סה״כ <span className="num" style={{ color: T.ink, fontWeight: 700 }}>{total}</span></span>
       </div>
@@ -1072,7 +1068,7 @@ export function TeamStrip({ todayKey, onOpenMember }: { todayKey: string; onOpen
   return (
     <section className="tj-card" style={{ ...card, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <span style={{ width: 30, height: 30, borderRadius: 10, background: T.accentSoft, color: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.users(15)}</span>
+        <IconChip pal="sky" size={30} radius={10}>{Ic.users(15)}</IconChip>
         <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>הצוות</h2>
         <span style={{ fontSize: 11.5, color: T.ink3 }}>לחיצה פותחת את כל המשימות</span>
       </div>

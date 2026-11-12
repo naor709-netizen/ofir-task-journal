@@ -8,7 +8,7 @@ import {
 } from "@/lib/push";
 import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta } from "@/lib/team";
 import { MANAGER_ID, MANAGER_NAME } from "@/lib/journals";
-import { T, alpha, Ic, Sheet, primaryBtn, ghostBtn, softBtn, inputStyle } from "./ui";
+import { T, alpha, Ic, Sheet, primaryBtn, ghostBtn, softBtn, inputStyle, IconChip, type Pal } from "./ui";
 import { InstallSteps } from "./InstallApp";
 
 type PushState = "unsupported" | "off" | "on" | "denied";
@@ -134,6 +134,7 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
       {/* ---- טלגרם: חינם, קופץ בכל טלפון ---- */}
       <Channel
         icon={Ic.send(18)}
+        pal="sky"
         title="טלגרם"
         badge={linked ? { text: "מחובר", tone: "ok" } : { text: "מומלץ · חינם", tone: "accent" }}
         subtitle="התראה קופצת כמו הודעה רגילה — באייפון ובאנדרואיד, גם כשהיומן סגור. כולל כפתורי ״✓ בוצע״ ו״⏰ עוד שעה״."
@@ -190,6 +191,7 @@ export function NotifyCenter({ journalId, personName, pushState, setPushState, o
       {/* ---- התראות מובנות: חינם, בלי אפליקציה ---- */}
       <Channel
         icon={Ic.bell(18)}
+        pal="pink"
         title="התראות מהיומן עצמו"
         badge={pushState === "on" ? { text: "פעיל", tone: "ok" } : pushState === "denied" && !(ios && !standalone) ? { text: "חסום", tone: "danger" } : { text: "חינם", tone: "accent" }}
         subtitle="בלי אפליקציה נוספת. באנדרואיד עובד מיד; באייפון — אחרי הוספת היומן למסך הבית."
@@ -314,6 +316,7 @@ function SmsChannel({ journalId, liveMask, onStatus }: {
   return (
     <Channel
       icon={Ic.phone(18)}
+      pal="lime"
       title="הודעות SMS"
       badge={showLinked ? { text: "מחובר", tone: "ok" } : { text: "בתשלום", tone: "accent" }}
       subtitle="הודעת SMS רגילה (Twilio, כמה סנטים להודעה)."
@@ -410,8 +413,8 @@ function TelegramSetupSteps() {
 
 // באייפון התראות מהיומן עובדות רק כשהוא מותקן במסך הבית (iOS 16.4 ומעלה) — השלבים ב-InstallApp.tsx
 
-function Channel({ icon, title, subtitle, badge, children }: {
-  icon: React.ReactNode; title: string; subtitle: string;
+function Channel({ icon, pal = "blue", title, subtitle, badge, children }: {
+  icon: React.ReactNode; pal?: Pal; title: string; subtitle: string;
   badge?: { text: string; tone: "ok" | "accent" | "danger" };
   children: React.ReactNode;
 }) {
@@ -419,7 +422,7 @@ function Channel({ icon, title, subtitle, badge, children }: {
   return (
     <section style={{ background: T.bg2, borderRadius: 18, padding: 14, marginBottom: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-        <span style={{ width: 34, height: 34, borderRadius: 11, background: T.surface, color: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: T.shadowSm }}>{icon}</span>
+        <IconChip pal={pal} size={34} radius={11}>{icon}</IconChip>
         <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 800, fontFamily: "var(--font-display)" }}>{title}</h3>
         {badge && (
           <span style={{ marginInlineStart: "auto", fontSize: 10.5, fontWeight: 700, color: bc, background: alpha(bc, 13), borderRadius: 99, padding: "2px 9px" }}>

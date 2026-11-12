@@ -7,7 +7,6 @@ import {
   installEnv, subscribeInstall, canPromptInstall, promptInstall, openInBrowserHref,
   subscribeInstallHidden, isInstallHidden, hideInstall, type InstallEnv,
 } from "@/lib/install";
-import { MANAGER_ID } from "@/lib/journals";
 
 // ============================================
 // "היומן כאפליקציה": באנר בדשבורד + גיליון הוראות לפי הטלפון.
@@ -25,8 +24,9 @@ function useCanPrompt(): boolean {
 
 const browserName = (env: InstallEnv) => (env.os === "ios" ? "Safari" : "Chrome");
 
-function AppIcon({ journalId, size = 46 }: { journalId: string; size?: number }) {
-  const src = journalId === MANAGER_ID ? "/icon-192.png" : `/j/${journalId}/icon?size=192`;
+// האייקון שיופיע במסך הבית — הלוגו של האפליקציה
+function AppIcon({ size = 46 }: { size?: number }) {
+  const src = "/icon-192.png";
   return (
     <span aria-hidden="true" style={{
       width: size, height: size, borderRadius: size * 0.28, flexShrink: 0,
@@ -64,7 +64,7 @@ export function InstallBanner({ journalId, onOpen }: { journalId: string; onOpen
       background: `linear-gradient(135deg, ${alpha("var(--tj-accent)", 11)} 0%, ${alpha("var(--tj-accent)", 2)} 65%), var(--tj-surface)`,
       border: `1px solid ${T.accentLine}`,
     }}>
-      <AppIcon journalId={journalId} />
+      <AppIcon />
       <div style={{ flex: "1 1 190px", minWidth: 0 }}>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: T.ink, letterSpacing: "-0.01em" }}>
           {env.inApp ? `היומן פתוח כרגע בתוך ${env.inApp}` : "היומן כאפליקציה בטלפון"}
@@ -96,7 +96,7 @@ export function InstallBanner({ journalId, onOpen }: { journalId: string; onOpen
 }
 
 // ---------- גיליון ההוראות ----------
-export function InstallSheet({ journalId, personName, onClose }: { journalId: string; personName: string; onClose: () => void }) {
+export function InstallSheet({ personName, onClose }: { personName: string; onClose: () => void }) {
   const env = useInstallEnv();
   const canPrompt = useCanPrompt();
   const { toast } = useToast();
@@ -111,7 +111,7 @@ export function InstallSheet({ journalId, personName, onClose }: { journalId: st
   return (
     <Sheet title="התקנה כאפליקציה" icon={Ic.phone(17)} onClose={onClose} width={460}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-        <AppIcon journalId={journalId} size={58} />
+        <AppIcon size={58} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: T.ink }}>היומן של {personName}</div>
           <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>חינם · בלי חנות אפליקציות · פחות מדקה</div>

@@ -13,11 +13,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: member ? `היומן של ${name}` : "יומן המשימות",
     description: "יומן משימות אישי — לוח שנה, קטגוריות, תזכורות, שלבים ותצוגות מרובות",
     manifest: `/j/${id}/manifest`,
-    // אייקון בגוון האישי של היומן (לא האייקון של אופיר)
-    icons: {
-      icon: [{ url: `/j/${id}/icon?size=192`, sizes: "192x192", type: "image/png" }],
-      apple: [{ url: `/j/${id}/icon?size=180`, sizes: "180x180", type: "image/png" }],
-    },
     appleWebApp: { capable: true, statusBarStyle: "default", title: member ? name : "היומן שלי" }, // קצר — נכנס מתחת לאייקון
   };
 }

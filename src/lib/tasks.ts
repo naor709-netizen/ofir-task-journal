@@ -494,13 +494,19 @@ export async function initJournalSync() {
     if (journal !== activeJournal) return; // היומן הוחלף בזמן הטעינה
     remote = true;
     const local = getJournalSnapshot() ?? loadJournal();
-    const cloudEmpty = cloud.tasks.length === 0 && cloud.categories === null;
+    // "ריק" = אין בענן שום שורה של היומן הזה עצמו. משימות ששותפו איתו מיומן אחר
+    // לא נחשבות — אחרת המשימות המקומיות של מכשיר ראשון היו נדרסות ונעלמות.
+    const ownCloud = cloud.tasks.filter((t) => !t.ownerId);
+    const cloudEmpty = ownCloud.length === 0 && cloud.categories === null;
     cloudRoots.clear();
     cloud.tasks.forEach((t) => cloudRoots.set(t.id, t));
-    if (cloudEmpty && (local.tasks.length > 0 || local.categories !== DEFAULT_CATEGORIES)) {
-      // מכשיר ראשון שמתחבר: מעלה את הנתונים המקומיים לענן
-      snapshot = local;
-      local.tasks.forEach((t) => dirtyRoots.add(t.id));
+    const localOwn = local.tasks.filter((t) => !t.ownerId);
+    if (cloudEmpty && (localOwn.length > 0 || local.categories !== DEFAULT_CATEGORIES)) {
+      // מכשיר ראשון שמתחבר: מעלה את הנתונים המקומיים לענן, ומצרף את המשימות ששותפו איתו
+      const shared = cloud.tasks.filter((t) => t.ownerId && !localOwn.some((x) => x.id === t.id));
+      snapshot = { categories: local.categories, tasks: [...localOwn, ...shared] };
+      saveJournal(snapshot);
+      localOwn.forEach((t) => dirtyRoots.add(t.id));
       catsDirty = true;
       flushPush();
     } else {
@@ -544,7 +550,9 @@ export async function fetchJournalRows(journal: string): Promise<Row[]> {
     if (error) throw error;
   }
   // הגנה כפולה: גם אם הסינון בשרת לא הופעל, לא מערבבים יומנים
-  return ((data ?? []) as Row[]).filter((r) => r.payload && payloadVisibleIn(r.payload, journal));
+  // משימה ששותפה איתי ועוד אין לה שם — היוצר עדיין מקליד; לא מציגים "ללא שם" אצל השותף
+  return ((data ?? []) as Row[]).filter((r) => r.payload && payloadVisibleIn(r.payload, journal) &&
+    (journalOfPayload(r.payload) === journal || !!String(r.payload.title ?? "").trim()));
 }
 
 async function fetchCloud(journal: string): Promise<{ categories: TaskCategory[] | null; tasks: Task[] }> {

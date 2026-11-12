@@ -19,8 +19,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     dir: "rtl",
     lang: "he",
     icons: [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+      { src: `/j/${id}/icon?size=192`, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+      { src: `/j/${id}/icon?size=512`, sizes: "512x512", type: "image/png", purpose: "any maskable" },
     ],
   };
   return new Response(JSON.stringify(body), {

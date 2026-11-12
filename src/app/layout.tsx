@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { GLOBAL_CSS } from "./global-css";
 import { ToastProvider } from "@/components/Toast";
+import { INSTALL_CAPTURE_SCRIPT } from "@/lib/install";
 
 export const metadata: Metadata = {
   title: "יומן המשימות של אופיר",
@@ -36,6 +37,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html:
               `try{var t=localStorage.getItem("ofir-theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.dataset.theme="dark"}catch(e){}` +
+              INSTALL_CAPTURE_SCRIPT +
               `var f=document.createElement("link");f.rel="stylesheet";f.href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";document.head.appendChild(f);`,
           }}
         />

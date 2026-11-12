@@ -164,6 +164,7 @@ export const Ic = {
   arrowR: (s?: number) => <I size={s} d="M5 12h14M13 6l6 6-6 6" />,
   dots: (s?: number) => <I size={s}><circle cx="5.5" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="18.5" cy="12" r="1" fill="currentColor" /></I>,
   activity: (s?: number) => <I size={s} d="M3 12h4l3-7 4 14 3-7h4" />,
+  download: (s?: number) => <I size={s}><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" /><path d="M5 19.5h14" /></I>,
   phone: (s?: number) => <I size={s}><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></I>,
   inbox: (s?: number) => <I size={s}><path d="M3 13.5 5.5 5h13l2.5 8.5V19a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19v-5.5Z" /><path d="M3 13.5h5l1.5 2.5h5l1.5-2.5h5" /></I>,
   refresh: (s?: number) => <I size={s}><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8" /><path d="M4 3.5V8h4.5M4 13a8 8 0 0 0 14.5 4.5L20 16" /><path d="M20 20.5V16h-4.5" /></I>,

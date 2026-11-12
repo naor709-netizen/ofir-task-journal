@@ -74,6 +74,7 @@ function MiniCard({ t, cat, todayKey, onOpen }: { t: Task; cat?: TaskCategory; t
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
         {t.critical && <span style={{ color: T.danger, display: "inline-flex" }}>{Ic.flame(10)}</span>}
+        {(t.ownerId || t.sharedWith?.length) && <span title="משימה משותפת" aria-label="משימה משותפת" style={{ color: T.ink3, display: "inline-flex" }}>{Ic.users(11)}</span>}
         {cat && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9.5, color: T.ink2 }}>
             <span style={{ width: 6, height: 6, borderRadius: 99, background: cat.color }} />{cat.name}
@@ -237,6 +238,7 @@ export function TableView({ roots, catById, todayKey, onOpen, onCycle }: ViewPro
                   <td style={{ padding: "10px 12px", maxWidth: 260 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                       {t.critical && <span style={{ color: T.danger, display: "inline-flex", flexShrink: 0 }}>{Ic.flame(12)}</span>}
+                      {(t.ownerId || t.sharedWith?.length) && <span title="משימה משותפת" aria-label="משימה משותפת" style={{ color: T.ink3, display: "inline-flex", flexShrink: 0 }}>{Ic.users(12)}</span>}
                       <span style={{
                         fontSize: 12.5, fontWeight: 600, color: T.ink,
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",

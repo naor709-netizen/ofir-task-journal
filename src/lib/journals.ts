@@ -75,15 +75,39 @@ export function journalOfPayload(payload: { journalId?: string | null } | null |
   return payload?.journalId || MANAGER_ID;
 }
 
+// ---- משימה משותפת ----
+// נשמרת פעם אחת, בשורה של היוצר (journalId), ומופיעה גם בכל יומן שב-sharedWith.
+// כך שני הצדדים רואים ומעדכנים את אותה משימה בדיוק — בלי עותקים שמתפצלים.
+export function sharedWithOfPayload(payload: { sharedWith?: unknown } | null | undefined): string[] {
+  const raw = payload?.sharedWith;
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((x): x is string => typeof x === "string" && isValidJournalId(x)))];
+}
+
+// כל מי שהמשימה מופיעה אצלו: הבעלים ראשון, ואחריו השותפים
+export function participantsOfPayload(payload: { journalId?: string | null; sharedWith?: unknown } | null | undefined): string[] {
+  const owner = journalOfPayload(payload);
+  return [owner, ...sharedWithOfPayload(payload).filter((x) => x !== owner)];
+}
+
+export function payloadVisibleIn(
+  payload: { journalId?: string | null; sharedWith?: unknown } | null | undefined,
+  journalId: string
+): boolean {
+  return journalOfPayload(payload) === journalId || sharedWithOfPayload(payload).includes(journalId);
+}
+
 // מה נשמר בשורה בענן: אצל אופיר — המשימה בדיוק כמו שהייתה תמיד (בלי שדה נוסף);
-// אצל איש צוות — עם journalId, כדי לדעת של מי השורה
+// אצל איש צוות — עם journalId, כדי לדעת של מי השורה.
+// ownerId קיים רק בצד הלקוח, על משימה ששותפה מיומן אחר: השורה נשארת של הבעלים
+// גם כשהשותף הוא ששומר אותה.
 export function rowPayload<T extends object>(task: T, journalId: string): T & { journalId?: string } {
-  if (journalId === MANAGER_ID) {
-    const copy = { ...task } as T & { journalId?: string };
-    delete copy.journalId;
-    return copy;
-  }
-  return { ...task, journalId };
+  const copy = { ...task } as T & { journalId?: string; ownerId?: string };
+  const owner = copy.ownerId || journalId;
+  delete copy.ownerId;
+  if (owner === MANAGER_ID) delete copy.journalId;
+  else copy.journalId = owner;
+  return copy;
 }
 
 export function journalPath(journalId: string): string {

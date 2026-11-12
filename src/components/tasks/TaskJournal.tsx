@@ -11,7 +11,7 @@ import {
   subscribeSyncState, getSyncState, getServerSyncState, getSyncDetail, initJournalSync,
   emptyTask, uid, isDone, isManagerDevice,
   replaceTaskInTree, removeTaskFromTree, findTaskInTree, flattenTasks, countSubtasks,
-  toDateKey, formatDateHe,
+  toDateKey, formatDateHe, sharedPartners,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS,
   HE_MONTHS, HE_WEEKDAYS, HE_WEEKDAYS_FULL, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
@@ -24,6 +24,7 @@ import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, Pro
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 import { NotifyCenter } from "./NotifyCenter";
+import { InstallBanner, InstallSheet } from "./InstallApp";
 import { TeamView, TeamStrip } from "./TeamView";
 import { Donut, Legend, DayBars, DayBarsLegend } from "./charts";
 
@@ -51,6 +52,19 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   const syncState = useSyncExternalStore(subscribeSyncState, getSyncState, getServerSyncState);
   const teamMeta = useSyncExternalStore(subscribeTeamMeta, getTeamMeta, getServerTeamMeta);
   const isManager = journalId === MANAGER_ID;
+
+  // כל האנשים (אופיר + הצוות) — לשיתוף משימה בין יומנים
+  const people = useMemo(() => [
+    { id: MANAGER_ID, name: MANAGER_NAME, color: "blue" as PersonColor },
+    ...teamMeta.roster.members.map((m) => ({ id: m.id, name: m.name, color: m.color })),
+  ], [teamMeta.roster.members]);
+  const sharedLabelOf = (t: Task): string | null => {
+    const names = sharedPartners(t, journalId)
+      .map((id) => people.find((p) => p.id === id)?.name)
+      .filter((n): n is string => !!n)
+      .map(firstName);
+    return names.length ? `משותפת עם ${names.join(" ו")}` : null;
+  };
 
   const VIEWS = useMemo(
     () => (isManager ? [BASE_VIEWS[0], { key: "team" as ViewKey, label: "הצוות", icon: Ic.users }, ...BASE_VIEWS.slice(1)] : BASE_VIEWS),
@@ -82,6 +96,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   const [freshId, setFreshId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
   // מהדשבורד הראשי ישר ל"כל המשימות" של איש צוות מסוים
   const [teamFocus, setTeamFocus] = useState<string | null>(null);
 
@@ -355,7 +370,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
     const removed = idx >= 0 ? journal.tasks[idx] : null;
     persist({ ...journal, tasks: removeTaskFromTree(journal.tasks, id) });
     setOpenTaskId(null);
-    toast("המשימה נמחקה", "info", {
+    toast(removed?.ownerId ? "המשימה הוסרה מהיומן שלך" : "המשימה נמחקה", "info", {
       label: "ביטול",
       onClick: () => {
         const s = getJournalSnapshot();
@@ -794,6 +809,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
 
           {view === "dashboard" && (
             <>
+              <InstallBanner journalId={journalId} onOpen={() => setInstallOpen(true)} />
               <Hero
                 personName={personName}
                 today={today}
@@ -840,7 +856,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                   <SectionHead icon={Ic.flame(15)} title="משימות קריטיות" count={criticalTasks.length} tone="danger" />
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 8 }}>
                     {criticalTasks.map((t) => (
-                      <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
+                      <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={sharedLabelOf(t)}
                         critical todayKey={todayKey}
                         onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} compact />
                     ))}
@@ -871,7 +887,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {regularTasks.map((t) => (
-                          <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
+                          <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={sharedLabelOf(t)}
                             todayKey={todayKey}
                             onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
                         ))}
@@ -933,7 +949,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 380, overflowY: "auto" }}>
                         {doneTasks.map((t) => (
-                          <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined}
+                          <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={sharedLabelOf(t)}
                             todayKey={todayKey} compact
                             onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
                         ))}
@@ -975,6 +991,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
           onSave={saveTask}
           onDelete={deleteTask}
           onAddCategory={addCategory}
+          share={{ journalId, people }}
           onClose={() => {
             const snap = getJournalSnapshot();
             if (freshId && snap) {
@@ -986,6 +1003,8 @@ export default function TaskJournal({ journalId, personName, personColor }: {
           }}
         />
       )}
+
+      {installOpen && <InstallSheet journalId={journalId} personName={personName} onClose={() => setInstallOpen(false)} />}
 
       {notifyOpen && (
         <NotifyCenter
@@ -1706,9 +1725,10 @@ function Empty({ filtersActive, onCreate }: { filtersActive: boolean; onCreate: 
   );
 }
 
-export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKey }: {
+export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKey, sharedLabel }: {
   task: Task;
   cat?: TaskCategory;
+  sharedLabel?: string | null;
   onOpen: () => void;
   onCycle: () => void;
   critical?: boolean;
@@ -1775,6 +1795,14 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
               color: T.accent, background: T.accentSoft, borderRadius: 99, padding: "1px 8px", flexShrink: 0,
             }}>
               {Ic.send(10)} מ{MANAGER_NAME}
+            </span>
+          )}
+          {sharedLabel && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700,
+              color: T.ink2, background: T.surface2, borderRadius: 99, padding: "1px 8px", flexShrink: 0,
+            }}>
+              {Ic.users(10)} {sharedLabel}
             </span>
           )}
           <span className="num" style={{ fontSize: 10, color: T.ink3, flexShrink: 0 }}>

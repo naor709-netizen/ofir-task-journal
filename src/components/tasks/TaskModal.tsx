@@ -10,7 +10,8 @@ import {
   formatDateHe, formatDateTimeHe, isoToLocalInput, localInputToIso, toDateKey,
   NATURE_LABELS, NATURE_COLORS, STATUS_LABELS, STATUS_COLORS, CATEGORY_COLOR_CHOICES,
 } from "@/lib/tasks";
-import { T, alpha, chip, inputStyle, Ic, StatusIcon } from "./ui";
+import { T, alpha, chip, inputStyle, Ic, StatusIcon, Avatar } from "./ui";
+import { personVar, firstName, type PersonColor } from "@/lib/journals";
 import { celebrate } from "@/lib/celebrate";
 
 const MAX_FILE_BYTES = 1.5 * 1024 * 1024;
@@ -34,10 +35,18 @@ function taskAtPath(root: Task, path: string[]): Task {
   return cur;
 }
 
-export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCategory, onClose, isNew }: {
+// שיתוף משימה בין יומנים: מי האנשים, ובאיזה יומן העורך פתוח כרגע
+export type ShareContext = {
+  journalId: string;
+  people: { id: string; name: string; color: PersonColor }[]; // כולם, כולל אופיר
+  canEdit?: boolean; // ברירת מחדל: רק מי שהמשימה שלו/ה
+};
+
+export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCategory, onClose, isNew, share }: {
   root: Task;
   focusId: string;
   isNew?: boolean;
+  share?: ShareContext;
   categories: TaskCategory[];
   onSave: (updated: Task) => void;
   onDelete: (id: string) => void;
@@ -56,6 +65,22 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
   const fileInputRef = useRef<HTMLInputElement>(null);
   const current = useMemo(() => taskAtPath(draft, path), [draft, path]);
   const isRoot = path.length === 1;
+
+  // ---- משימה משותפת (משימת שורש בלבד) ----
+  const ownerId = draft.ownerId ?? share?.journalId ?? "";
+  const owner = share?.people.find((p) => p.id === ownerId) ?? null;
+  const foreign = !!draft.ownerId; // המשימה שייכת ליומן אחר ושותפה עם היומן הזה
+  const shareCandidates = share ? share.people.filter((p) => p.id !== ownerId) : [];
+  const sharedIds = (draft.sharedWith ?? []).filter((id) => shareCandidates.some((p) => p.id === id));
+  const canEditShare = share?.canEdit ?? !foreign;
+  function toggleShare(id: string) {
+    setDraft((d) => {
+      const cur = d.sharedWith ?? [];
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      return { ...d, sharedWith: next.length ? next : undefined };
+    });
+    setDirty(true);
+  }
 
   // סגירה בכל דרך שאינה "ביטול" שומרת שינויים אוטומטית — בלי זה, הקשה על הרקע
   // בנייד (או Escape) הייתה זורקת את כל מה שהוקלד, כולל משימה חדשה שלמה
@@ -121,7 +146,13 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
 
   function deleteCurrent() {
     if (isRoot) {
-      if (confirm("למחוק את המשימה כולה, כולל כל השלבים?")) onDelete(draft.id);
+      const partners = sharedIds.map((id) => shareCandidates.find((p) => p.id === id)!.name);
+      const msg = foreign && !share?.canEdit
+        ? `להסיר את המשימה מהיומן שלך?\n\nהיא תישאר ביומן של ${owner?.name ?? "מי שיצר/ה אותה"}.`
+        : partners.length
+          ? `למחוק את המשימה כולה, כולל כל השלבים?\n\nהיא משותפת עם ${partners.join(" ו")} — ותימחק גם שם.`
+          : "למחוק את המשימה כולה, כולל כל השלבים?";
+      if (confirm(msg)) onDelete(draft.id);
       return;
     }
     if (!confirm("למחוק את השלב הזה, כולל תתי-השלבים שלו?")) return;
@@ -274,6 +305,38 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
               {Ic.flame(13)} {current.critical ? "קריטית" : "סימון כקריטית"}
             </button>
           </div>
+
+          {/* shared task */}
+          {isRoot && share && shareCandidates.length > 0 && (
+            <Field label="משימה משותפת" icon={Ic.users(13)}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {foreign && owner && (
+                  <span style={{ ...chip(personVar(owner.color), true), cursor: "default", padding: "4px 12px 4px 5px" }}>
+                    <Avatar name={owner.name} color={owner.color} size={22} />
+                    מהיומן של {firstName(owner.name)}
+                  </span>
+                )}
+                {shareCandidates.filter((p) => canEditShare || sharedIds.includes(p.id)).map((p) => {
+                  const active = sharedIds.includes(p.id);
+                  const me = p.id === share.journalId;
+                  return (
+                    <button key={p.id} type="button" aria-pressed={active} disabled={!canEditShare}
+                      onClick={() => toggleShare(p.id)}
+                      style={{ ...chip(personVar(p.color), active), padding: "4px 12px 4px 5px", cursor: canEditShare ? "pointer" : "default" }}>
+                      <Avatar name={p.name} color={p.color} size={22} />
+                      {me && foreign && !share.canEdit ? "משותפת איתך" : active ? `משותפת עם ${firstName(p.name)}` : `שיתוף עם ${firstName(p.name)}`}
+                      {active && canEditShare && <span style={{ display: "inline-flex" }}>{Ic.check(12)}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 7, lineHeight: 1.5 }}>
+                {sharedIds.length || foreign
+                  ? "מופיעה ביומן של שניכם — כל אחד יכול לעדכן ולסמן, והתזכורות קופצות לשניכם."
+                  : "בחירה תציג את המשימה גם ביומן השני. שניכם תוכלו לעדכן ולסמן אותה."}
+              </div>
+            </Field>
+          )}
 
           {/* nature */}
           <Field label="מהות" icon={Ic.flag(13)}>
@@ -519,7 +582,7 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
             background: "transparent", border: `1px solid ${alpha(T.danger, 33)}`, color: T.danger,
             borderRadius: 10, padding: "8px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 500, fontFamily: "inherit",
           }}>
-            {Ic.trash(13)} {isRoot ? "מחיקת משימה" : "מחיקת שלב"}
+            {Ic.trash(13)} {!isRoot ? "מחיקת שלב" : foreign && !share?.canEdit ? "הסרה מהיומן שלי" : "מחיקת משימה"}
           </button>
           {!isRoot && (
             <button onClick={() => setPath((p) => p.slice(0, -1))} style={{

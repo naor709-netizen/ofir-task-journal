@@ -6,13 +6,13 @@
 // ============================================
 
 import {
-  MANAGER_ID, META, DEFAULT_PREFS, metaKey, journalOfPayload, normalizeRoster, newJournalId,
-  MEMBER_COLOR_ORDER, rowPayload,
+  MANAGER_ID, META, DEFAULT_PREFS, metaKey, participantsOfPayload, normalizeRoster, newJournalId,
+  MEMBER_COLOR_ORDER,
   type TeamRoster, type TeamMember, type NotifyPrefs, type PersonColor,
 } from "./journals";
 import {
   type Task, type TaskCategory, DEFAULT_CATEGORIES, normalizeTask, storageKeyFor,
-  replaceTaskInTree, findTaskInTree, emptyTask, uid,
+  replaceTaskInTree, findTaskInTree, emptyTask, uid, taskFromRow, taskToRow,
 } from "./tasks";
 
 const hasCloud = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -317,10 +317,14 @@ export async function refetchTeamData() {
       if (jid && journals[jid]) journals[jid].categories = r.payload.map((c) => ({ ...c, parentId: c.parentId ?? null }));
     }
     for (const r of (tasksRes.data ?? []) as { id: string; payload: Task & { journalId?: string }; updated_at?: string }[]) {
-      const jid = journalOfPayload(r.payload);
-      if (!journals[jid]) continue; // יומן של אשת צוות שהוסרה
-      journals[jid].tasks.push(normalizeTask(r.payload));
-      if (r.updated_at) journals[jid].updatedAt![r.id] = r.updated_at;
+      if (!r.payload) continue;
+      // משימה משותפת מופיעה אצל כל מי ששותף בה (הבעלים + sharedWith)
+      for (const jid of participantsOfPayload(r.payload)) {
+        const slice = journals[jid];
+        if (!slice) continue; // יומן של אשת צוות שהוסרה
+        slice.tasks.push(taskFromRow(r.payload, jid, new Set(slice.categories.map((c) => c.id))));
+        if (r.updated_at) slice.updatedAt![r.id] = r.updated_at;
+      }
     }
     for (const j of Object.values(journals)) j.tasks.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     setTeamData({ journals, loaded: true, error: null, fetchedAt: Date.now() });
@@ -351,7 +355,7 @@ export async function upsertJournalRoot(journalId: string, root: Task) {
   try {
     const { supabase } = await import("./supabase");
     const { error } = await supabase.from("journal_tasks").upsert({
-      id: root.id, payload: rowPayload(root, journalId), updated_at: new Date().toISOString(),
+      id: root.id, payload: taskToRow(root, journalId), updated_at: new Date().toISOString(),
     });
     if (error) throw error;
   } finally {

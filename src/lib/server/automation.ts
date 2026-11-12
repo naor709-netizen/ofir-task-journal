@@ -1,7 +1,7 @@
 import webpush from "web-push";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
-  MANAGER_ID, MANAGER_NAME, META, DEFAULT_PREFS, journalOfPayload, journalPath, metaKey, normalizeRoster,
+  MANAGER_ID, MANAGER_NAME, META, DEFAULT_PREFS, participantsOfPayload, journalPath, metaKey, normalizeRoster,
   type TeamRoster, type NotifyPrefs,
 } from "@/lib/journals";
 import { telegramToJournal, tgConfigured, type TgButton } from "./telegram";
@@ -30,6 +30,7 @@ export type Task = {
   subtasks?: Task[];
   assignedBy?: string | null;
   journalId?: string;
+  sharedWith?: string[]; // משימה משותפת: יומנים נוספים שהיא מופיעה בהם
 };
 
 export type Category = { id: string; name: string; color: string; parentId?: string | null };
@@ -147,7 +148,8 @@ export async function loadJournals(sb: SupabaseClient): Promise<{ roster: TeamRo
   const byId = new Map(journals.map((j) => [j.id, j]));
   for (const r of (tasksRes.data ?? []) as { payload: Task }[]) {
     if (!r.payload) continue;
-    byId.get(journalOfPayload(r.payload))?.tasks.push(r.payload);
+    // משימה משותפת נכנסת לתמונת המצב של כל מי ששותף בה
+    for (const jid of participantsOfPayload(r.payload)) byId.get(jid)?.tasks.push(r.payload);
   }
   return { roster, journals };
 }

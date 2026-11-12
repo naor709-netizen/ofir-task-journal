@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { T, alpha } from "./ui";
+import { T, alpha, palEdge } from "./ui";
 
 // ============================================
 // גרפים — SVG ידני, בלי ספריות. צבעי טקסט מהטוקנים (בהיר/כהה),
@@ -67,7 +67,7 @@ export function Legend({ items }: { items: { label: string; color: string; value
     <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
       {items.map((it) => (
         <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink2 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, background: it.color, flexShrink: 0 }} />
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: it.color, flexShrink: 0, boxShadow: `inset 0 0 0 1px ${palEdge(it.color)}` }} />
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.label}</span>
           {it.value !== undefined && <span className="num" style={{ color: T.ink, fontWeight: 700 }}>{it.value}</span>}
         </div>
@@ -106,9 +106,12 @@ export function DayBars({ days, up, down, height = 190, ariaLabel, showValues }:
           width: "100%", height: h,
           borderRadius: dir === "up" ? "7px 7px 2px 2px" : "2px 2px 7px 7px",
           background: dir === "up"
-            ? `linear-gradient(180deg, ${color}, color-mix(in srgb, ${color} 62%, transparent))`
-            : `linear-gradient(0deg, color-mix(in srgb, ${color} 85%, transparent), color-mix(in srgb, ${color} 40%, transparent))`,
-          boxShadow: on && v ? `0 ${dir === "up" ? 8 : -8}px 18px -8px ${alpha(color, 80)}` : "none",
+            ? `linear-gradient(180deg, ${color}, color-mix(in srgb, ${color} 80%, transparent))`
+            : `linear-gradient(0deg, color-mix(in srgb, ${color} 92%, transparent), color-mix(in srgb, ${color} 62%, transparent))`,
+          // קו מתאר כהה מעט — צבע בהיר (ליים) נשאר חד גם על רקע לבן
+          boxShadow: v
+            ? `inset 0 0 0 1px ${palEdge(color)}${on ? `, 0 ${dir === "up" ? 8 : -8}px 18px -8px ${alpha(color, 80)}` : ""}`
+            : "none",
           transition: "height .7s var(--ease-out), box-shadow .2s",
         }} />
         {values && dir === "down" && v > 0 && <span className="num" style={{ fontSize: 10, fontWeight: 700, color: on ? T.ink : T.ink3, lineHeight: 1 }}>{v}</span>}
@@ -179,7 +182,7 @@ export function DayBarsLegend({ items }: { items: { label: string; color: string
     <div style={{ display: "flex", gap: 14, fontSize: 12, color: T.ink2, flexWrap: "wrap" }}>
       {items.map((it) => (
         <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, background: it.color }} />
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: it.color, boxShadow: `inset 0 0 0 1px ${palEdge(it.color)}` }} />
           {it.label} <b className="num" style={{ color: T.ink }}>{it.total}</b>
         </span>
       ))}
@@ -216,8 +219,8 @@ export function Columns({ items, height = 170, color = "var(--tj-accent)", highl
               }}>
                 <div style={{
                   width: "100%", height: it.value ? h : 0, borderRadius: 10,
-                  background: `linear-gradient(180deg, ${color} 0%, color-mix(in srgb, ${color} 60%, transparent) 100%)`,
-                  boxShadow: on && it.value ? `0 10px 22px -10px ${alpha(color, 85)}` : "none",
+                  background: `linear-gradient(180deg, ${color} 0%, color-mix(in srgb, ${color} 72%, transparent) 100%)`,
+                  boxShadow: it.value ? `inset 0 0 0 1px ${palEdge(color)}${on ? `, 0 10px 22px -10px ${alpha(color, 85)}` : ""}` : "none",
                   transition: "height .8s var(--ease-out), box-shadow .25s",
                 }} />
               </div>
@@ -262,9 +265,10 @@ export function SplitBars({ rows }: { rows: { key: string; label: string; color:
 }
 
 // ---------- מפת חום: השלמות לפי יום, 12 שבועות — תאים גמישים שממלאים את הרוחב ----------
-export function Heatmap({ weeks, color = "var(--tj-mint)", dayLabels, ariaLabel, todayKey }: {
+export function Heatmap({ weeks, color = "var(--tj-mint)", fills: fillsIn, dayLabels, ariaLabel, todayKey }: {
   weeks: { key: string; label: string; value: number; future?: boolean }[][]; // כל שבוע = 7 ימים (א׳→ש׳)
   color?: string;
+  fills?: string[]; // רמפה רציפה של גוון אחד: [ריק, 1, 2, 3, 4]
   dayLabels: string[];
   ariaLabel: string;
   todayKey?: string;
@@ -272,7 +276,7 @@ export function Heatmap({ weeks, color = "var(--tj-mint)", dayLabels, ariaLabel,
   const [hover, setHover] = useState<{ key: string; label: string; value: number } | null>(null);
   const max = Math.max(1, ...weeks.flat().map((d) => d.value));
   const level = (v: number) => (v === 0 ? 0 : v / max <= 0.25 ? 1 : v / max <= 0.5 ? 2 : v / max <= 0.75 ? 3 : 4);
-  const fills = [alpha("var(--tj-ink3)", 11), alpha(color, 32), alpha(color, 56), alpha(color, 80), color];
+  const fills = fillsIn ?? [alpha("var(--tj-ink3)", 11), alpha(color, 32), alpha(color, 56), alpha(color, 80), color];
   return (
     <div role="img" aria-label={ariaLabel} style={{ minWidth: 0 }}>
       <div style={{ display: "flex", gap: 5 }}>
@@ -295,7 +299,7 @@ export function Heatmap({ weeks, color = "var(--tj-mint)", dayLabels, ariaLabel,
                       background: d.future ? "transparent" : fills[level(d.value)],
                       boxShadow: d.future ? `inset 0 0 0 1px ${T.line}`
                         : today ? `0 0 0 2px var(--tj-surface), 0 0 0 3.5px var(--tj-accent)`
-                        : on ? `0 0 0 2px var(--tj-surface), 0 0 0 3.5px ${alpha(color, 70)}` : "none",
+                        : on ? `0 0 0 2px var(--tj-surface), 0 0 0 3.5px ${fills[4]}` : "none",
                       transform: on ? "scale(1.12)" : "none",
                       transition: "transform .18s var(--ease-out), box-shadow .18s",
                     }} />

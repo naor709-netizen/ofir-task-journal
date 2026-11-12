@@ -204,6 +204,18 @@ export async function removeMember(id: string) {
   if (!hasCloud) return;
   const { supabase } = await import("./supabase");
   await supabase.from("journal_tasks").delete().eq("payload->>journalId", id);
+  // משימות של אחרים ששותפו איתו/ה: נשארות אצל הבעלים, רק בלי השותף שנמחק
+  const { data: sharedRows } = await supabase.from("journal_tasks").select("id,payload").not("payload->>sharedWith", "is", null);
+  const strip = ((sharedRows ?? []) as { id: string; payload: Task & { journalId?: string } }[])
+    .filter((r) => Array.isArray(r.payload?.sharedWith) && r.payload.sharedWith.includes(id))
+    .map((r) => {
+      const rest = r.payload.sharedWith!.filter((x) => x !== id);
+      const payload = { ...r.payload, sharedWith: rest.length ? rest : undefined } as Task & { journalId?: string };
+      if (payload.sharedCats) { const sc = { ...payload.sharedCats }; delete sc[id]; payload.sharedCats = sc; }
+      if (!payload.sharedWith) delete payload.sharedWith;
+      return { id: r.id, payload, updated_at: new Date().toISOString() };
+    });
+  if (strip.length) await supabase.from("journal_tasks").upsert(strip);
   await deleteMeta([metaKey("categories", id), META.telegram(id), META.telegramPending(id), `sms:${id}`, `sms-pending:${id}`]);
 }
 
@@ -319,9 +331,11 @@ export async function refetchTeamData() {
     for (const r of (tasksRes.data ?? []) as { id: string; payload: Task & { journalId?: string }; updated_at?: string }[]) {
       if (!r.payload) continue;
       // משימה משותפת מופיעה אצל כל מי ששותף בה (הבעלים + sharedWith)
+      const owner = participantsOfPayload(r.payload)[0];
       for (const jid of participantsOfPayload(r.payload)) {
         const slice = journals[jid];
         if (!slice) continue; // יומן של אשת צוות שהוסרה
+        if (jid !== owner && !String(r.payload.title ?? "").trim()) continue; // עדיין בהקלדה אצל היוצר
         slice.tasks.push(taskFromRow(r.payload, jid, new Set(slice.categories.map((c) => c.id))));
         if (r.updated_at) slice.updatedAt![r.id] = r.updated_at;
       }

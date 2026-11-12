@@ -102,6 +102,51 @@ export const softBtn: React.CSSProperties = {
   boxShadow: `inset 0 0 0 1px ${T.accentLine}`,
 };
 
+// ---------- לוח הצבעים של אייקוני הפיצ'רים והגרפים ----------
+// תשעה צבעים שהמשתמש בחר. משמשים רק כמילוי (אייקון / סימן בגרף) — אף פעם לא כצבע טקסט:
+// הבהירים (ליים, תכלת, קרם) לא עוברים ניגודיות על לבן.
+
+export type Pal = "lime" | "sky" | "blue" | "crimson" | "pink" | "lavender" | "cream" | "plum" | "purple";
+
+export const palVar = (p: Pal) => `var(--pal-${p})`;
+
+// על מילוי בהיר הגליף בסגול-שזיף, על כהה — לבן (כולם ≥ 3:1 במרכז האייקון)
+const PAL_LIGHT: Record<Pal, boolean> = {
+  lime: true, sky: true, cream: true, lavender: true,
+  blue: false, crimson: false, pink: false, plum: false, purple: false,
+};
+
+export function palOn(p: Pal): string {
+  return PAL_LIGHT[p] ? "var(--pal-ink)" : "#fff";
+}
+
+export function palGradient(p: Pal): string {
+  const c = palVar(p);
+  return PAL_LIGHT[p]
+    ? `linear-gradient(140deg, color-mix(in srgb, ${c} 78%, #fff), ${c})`
+    : `linear-gradient(140deg, ${c}, color-mix(in srgb, ${c} 70%, #000))`;
+}
+
+// קו מתאר דק לסימן בגרף — נותן לצבעים הבהירים קצה ברור גם על רקע לבן
+export function palEdge(color: string): string {
+  return `color-mix(in srgb, ${color} 68%, var(--pal-ink))`;
+}
+
+// "הלוגו" של פיצ'ר: ריבוע מעוגל במילוי מהלוח, עם אייקון בפנים
+export function IconChip({ pal, size = 32, radius, children, style }: {
+  pal: Pal; size?: number; radius?: number; children: React.ReactNode; style?: React.CSSProperties;
+}) {
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: radius ?? Math.round(size * 0.34), flexShrink: 0,
+      color: palOn(pal), background: palGradient(pal),
+      boxShadow: `0 8px 18px -10px ${alpha(palVar(pal), 90)}, inset 0 0 0 1px ${alpha("var(--pal-ink)", PAL_LIGHT[pal] ? 10 : 0)}`,
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      ...style,
+    }}>{children}</span>
+  );
+}
+
 // ---------- icons (stroke, currentColor) ----------
 
 function I({ d, size = 16, sw = 1.8, children }: { d?: string; size?: number; sw?: number; children?: React.ReactNode }) {

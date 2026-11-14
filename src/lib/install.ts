@@ -60,7 +60,7 @@ export function installEnv(): InstallEnv | null {
     os: ios ? "ios" : android ? "android" : "other",
     browser,
     inApp,
-    standalone: !!standalone || !!window.__tjInstalled,
+    standalone: !!standalone,
     mobile: ios || android || !!window.matchMedia?.("(pointer: coarse)").matches,
   };
   return envCache;
@@ -75,6 +75,26 @@ export function subscribeInstall(cb: () => void): () => void {
 
 export function canPromptInstall(): boolean {
   return typeof window !== "undefined" && !!window.__tjBIP;
+}
+
+// האפליקציה כבר מותקנת במכשיר הזה? (הותקנה עכשיו, או שהדפדפן יודע לדווח על כך)
+export function isAppInstalled(): boolean {
+  return typeof window !== "undefined" && !!window.__tjInstalled;
+}
+
+// כרום באנדרואיד יודע לומר אם ה-PWA של האתר מותקן (דרך related_applications ב-manifest).
+// כך כפתור ההתקנה חוזר לבד אחרי הסרת האפליקציה, ונעלם כשהיא מותקנת.
+let installedChecked = false;
+export function detectInstalledApp(): void {
+  if (installedChecked || typeof navigator === "undefined") return;
+  installedChecked = true;
+  const nav = navigator as Navigator & { getInstalledRelatedApps?: () => Promise<unknown[]> };
+  if (!nav.getInstalledRelatedApps) return;
+  nav.getInstalledRelatedApps()
+    .then((apps) => {
+      if (apps.length > 0) { window.__tjInstalled = true; window.dispatchEvent(new Event("tj-bip")); }
+    })
+    .catch(() => { /* לא נתמך / נחסם — נשארים עם מה שידוע */ });
 }
 
 export async function promptInstall(): Promise<InstallOutcome> {
@@ -104,8 +124,11 @@ export function openInBrowserHref(env: InstallEnv, url: string): string | null {
 }
 
 // ---- "לא עכשיו" על הבאנר — לכל יומן בנפרד ----
+// רק סגירה מפורשת (X) מסתירה את הבאנר, ורק אותו: כפתור ההתקנה הקבוע (בכותרת וב"עוד") נשאר תמיד.
+// המפתח הוחלף (dismiss) כדי שסימונים ישנים — שנוצרו גם אחרי התקנה מוצלחת — לא יסתירו את הבאנר
+// למי שהסיר את האפליקציה ורוצה להתקין שוב.
 
-const hideKey = (journalId: string) => `tj-install-hide@${journalId}`;
+const hideKey = (journalId: string) => `tj-install-dismiss@${journalId}`;
 
 export function subscribeInstallHidden(cb: () => void): () => void {
   window.addEventListener("tj-install-hide", cb);

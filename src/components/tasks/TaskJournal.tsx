@@ -20,11 +20,11 @@ import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta, markManagerDevice } 
 import { MANAGER_ID, MANAGER_NAME, firstName, type PersonColor } from "@/lib/journals";
 import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
-import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, primaryBtn, IconChip, palVar, type Pal } from "./ui";
+import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, primaryBtn, IconChip, palVar, Sheet, Toggle, type Pal } from "./ui";
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 import { NotifyCenter } from "./NotifyCenter";
-import { InstallBanner, InstallSheet } from "./InstallApp";
+import { InstallBanner, InstallSheet, InstallButton, useInstallOffer, useInstallAction } from "./InstallApp";
 import { TeamView, TeamStrip } from "./TeamView";
 import { Donut, Legend, DayBars, DayBarsLegend } from "./charts";
 
@@ -41,6 +41,29 @@ const BASE_VIEWS: { key: ViewKey; label: string; icon: (s?: number) => React.Rea
 ];
 
 type StatusFilter = "all" | "active" | "progress" | "done";
+
+// קיבוץ משימות פתוחות לפי דחיפות — מה שבוער למעלה, מה שרחוק למטה
+type DueBucket = { key: "overdue" | "today" | "tomorrow" | "week" | "later" | "none"; label: string; tasks: Task[] };
+function dueBuckets(tasks: Task[], todayKey: string): DueBucket[] {
+  const shift = (n: number) => { const d = new Date(`${todayKey}T12:00:00`); d.setDate(d.getDate() + n); return toDateKey(d); };
+  const tomorrow = shift(1);
+  const weekEnd = shift(7);
+  const out: DueBucket[] = [
+    { key: "overdue", label: "באיחור", tasks: [] },
+    { key: "today", label: "היום", tasks: [] },
+    { key: "tomorrow", label: "מחר", tasks: [] },
+    { key: "week", label: "השבוע", tasks: [] },
+    { key: "later", label: "בהמשך", tasks: [] },
+    { key: "none", label: "בלי תאריך", tasks: [] },
+  ];
+  for (const t of tasks) {
+    const d = t.dueDate;
+    const i = !d ? 5 : d < todayKey ? 0 : d === todayKey ? 1 : d === tomorrow ? 2 : d <= weekEnd ? 3 : 4;
+    out[i].tasks.push(t);
+  }
+  for (const b of out) b.tasks.sort((a, z) => (a.dueDate ?? "").localeCompare(z.dueDate ?? "") || z.createdAt.localeCompare(a.createdAt));
+  return out.filter((b) => b.tasks.length > 0);
+}
 
 // משימה משותפת: שייכת ליומן אחר ושותפה איתי, או שלי ושיתפתי אותה
 const isSharedTask = (t: Task) => !!(t.ownerId || t.sharedWith?.length);
@@ -82,6 +105,8 @@ export default function TaskJournal({ journalId, personName, personColor }: {
       ? [BASE_VIEWS[0], shared, team, ...BASE_VIEWS.slice(1)]
       : [BASE_VIEWS[0], shared, ...BASE_VIEWS.slice(1)];
   }, [isManager]);
+  // בטלפון: שלושה יעדים בסרגל התחתון (+ "משימה חדשה" במרכז), והשאר תחת "עוד"
+  const barKeys: ViewKey[] = isManager ? ["dashboard", "shared", "team"] : ["dashboard", "shared", "week"];
   // קישורים מהתראות: /?view=team (היומן לא מצויר בשרת — אין חשש לאי-התאמה)
   const [view, setView] = useState<ViewKey>(() => {
     if (typeof window === "undefined") return "dashboard";
@@ -110,6 +135,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   // מהדשבורד הראשי ישר ל"כל המשימות" של איש צוות מסוים
   const [teamFocus, setTeamFocus] = useState<string | null>(null);
 
@@ -515,6 +541,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   const header = (
     <Header
       sync={sync} onSyncClick={showSyncDiag}
+      onInstall={() => setInstallOpen(true)} onNotify={() => setNotifyOpen(true)} phoneReady={phoneReady}
       personName={personName} personColor={personColor} isManager={isManager}
       teamCount={teamMeta.roster.members.length}
     />
@@ -838,7 +865,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
         {/* ---- main ---- */}
         <main className="tj-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
 
-          <button className="tj-sidebar-toggle" onClick={() => setSidebarOpen((o) => {
+          <button className="tj-sidebar-toggle" data-open={sidebarOpen} onClick={() => setSidebarOpen((o) => {
             if (!o) window.scrollTo({ top: 0, behavior: "smooth" });
             return !o;
           })} style={{
@@ -873,7 +900,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
               <div className="tj-kpis" style={{
                 display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10,
               }}>
-                <StatCell label="משימות פתוחות" value={openCount} icon={Ic.layers(16)} pal="blue"
+                <StatCell label="משימות פתוחות" short="פתוחות" value={openCount} icon={Ic.layers(16)} pal="blue"
                   active={statusFilter === "active"} onClick={() => setStatusFilter(statusFilter === "active" ? "all" : "active")} />
                 <StatCell label="בתהליך" value={inProgressCount} icon={Ic.progress(16)} pal="purple"
                   active={statusFilter === "progress"} onClick={() => setStatusFilter(statusFilter === "progress" ? "all" : "progress")} />
@@ -897,7 +924,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
 
               {/* critical strip */}
               {criticalTasks.length > 0 && (
-                <section className="tj-card" style={{ ...tintCard(T.danger), padding: 16 }}>
+                <section className="tj-card tj-critical" style={{ ...tintCard(T.danger), padding: 16 }}>
                   <SectionHead icon={Ic.flame(15)} title="משימות קריטיות" count={criticalTasks.length} tone="danger" />
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 8 }}>
                     {criticalTasks.map((t) => (
@@ -912,13 +939,26 @@ export default function TaskJournal({ journalId, personName, personColor }: {
               {/* tasks (main, right) + calendar (left column) side by side */}
               <div className="tj-dash-cols" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-                  <section className="tj-card" style={{ ...card, padding: 16 }}>
-                    <SectionHead icon={Ic.layers(15)} title="המשימות שלי" count={activeCount}
-                      extra={filtersActive ? (
-                        <button onClick={clearFilters} style={{ marginInlineStart: "auto", background: "none", border: "none", color: T.accent, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          {Ic.x(11)} ניקוי סינון
-                        </button>
-                      ) : undefined} />
+                  <section className="tj-card tj-mytasks" style={{ ...card, padding: 16 }}>
+                    <SectionHead icon={Ic.layers(15)} title="המשימות שלי" count={regularTasks.length}
+                      extra={
+                        <span style={{ marginInlineStart: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          {filtersActive && (
+                            <button onClick={clearFilters} style={{ background: "none", border: "none", color: T.accent, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              {Ic.x(11)} ניקוי סינון
+                            </button>
+                          )}
+                          <button className="tj-filterbtn" aria-label="סינון וקטגוריות" title="סינון וקטגוריות"
+                            onClick={() => { setSidebarOpen(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                            style={{
+                              width: 36, height: 36, borderRadius: 99, cursor: "pointer",
+                              border: `1px solid ${filtersActive ? T.accentLine : T.line}`, background: filtersActive ? T.accentSoft : T.surface,
+                              color: filtersActive ? T.accent : T.ink2, alignItems: "center", justifyContent: "center",
+                            }}>
+                            {Ic.filter(15)}
+                          </button>
+                        </span>
+                      } />
 
                     {activeCount === 0 ? (
                       doneTasks.length > 0 ? (
@@ -931,13 +971,23 @@ export default function TaskJournal({ journalId, personName, personColor }: {
                       )
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {regularTasks.map((t) => (
-                          <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={sharedLabelOf(t)}
-                            todayKey={todayKey}
-                            onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
+                        {/* לפי דחיפות: באיחור ← היום ← מחר ← השבוע ← בהמשך ← בלי תאריך */}
+                        {dueBuckets(regularTasks, todayKey).map((b, bi) => (
+                          <div key={b.key} role="group" aria-label={b.label} style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: bi ? 10 : 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px" }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: b.key === "overdue" ? T.danger : T.ink2 }}>{b.label}</span>
+                              <span className="num" style={{ fontSize: 11, color: T.ink3 }}>{b.tasks.length}</span>
+                              <span aria-hidden="true" style={{ flex: 1, height: 1, background: T.line }} />
+                            </div>
+                            {b.tasks.map((t) => (
+                              <TaskRow key={t.id} task={t} cat={t.categoryId ? catById[t.categoryId] : undefined} sharedLabel={sharedLabelOf(t)}
+                                todayKey={todayKey}
+                                onOpen={() => setOpenTaskId(t.id)} onCycle={() => cycleStatus(t)} />
+                            ))}
+                          </div>
                         ))}
                         {regularTasks.length === 0 && (
-                          <div style={{ fontSize: 12.5, color: T.ink3, padding: "8px 2px" }}>כל המשימות הפתוחות כאן קריטיות — הן מופיעות למעלה.</div>
+                          <div style={{ fontSize: 12.5, color: T.ink3, padding: "8px 2px" }}>כל המשימות הפתוחות כאן קריטיות או משותפות — הן מופיעות במקטעים שלהן.</div>
                         )}
                       </div>
                     )}
@@ -1052,6 +1102,28 @@ export default function TaskJournal({ journalId, personName, personColor }: {
 
       {installOpen && <InstallSheet personName={personName} onClose={() => setInstallOpen(false)} />}
 
+      {/* ===== טלפון: ניווט תחתון בהישג האגודל, עם "+" במרכז ===== */}
+      <BottomNav
+        views={VIEWS} barKeys={barKeys} view={view}
+        onChange={(v) => { setView(v); window.scrollTo({ top: 0 }); }}
+        onAdd={() => { try { navigator.vibrate?.(8); } catch { /* לא נתמך */ } createTask(); }} onMore={() => setMoreOpen(true)}
+        badges={{ shared: sharedOpenAll }}
+      />
+      {moreOpen && (
+        <MoreSheet
+          views={VIEWS.filter((v) => !barKeys.includes(v.key))} view={view}
+          onPick={(v) => { setView(v); setMoreOpen(false); window.scrollTo({ top: 0 }); }}
+          theme={theme} onToggleTheme={toggleTheme}
+          notifyLabel={phoneReady ? (telegramLinked ? "טלגרם מחובר" : pushState === "on" ? "התראות פעילות" : "SMS מחובר") : "לא מחובר"}
+          phoneReady={phoneReady} onNotify={() => { setMoreOpen(false); setNotifyOpen(true); }}
+          filtersActive={filtersActive}
+          onFilters={view === "team" ? undefined : () => { setMoreOpen(false); setSidebarOpen(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+          sync={sync} onSync={() => { setMoreOpen(false); showSyncDiag(); }}
+          onInstall={() => { setMoreOpen(false); setInstallOpen(true); }}
+          onClose={() => setMoreOpen(false)}
+        />
+      )}
+
       {notifyOpen && (
         <NotifyCenter
           journalId={journalId}
@@ -1083,19 +1155,52 @@ export default function TaskJournal({ journalId, personName, personColor }: {
           .tj-search-live { display: flex !important; }
         }
         input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
+        .tj-bottomnav { display: none; }
+        .tj-install-short { display: none; }
+        /* מגע: אזור לחיצה נוח לסימון סטטוס, בלי לשנות את גודל האייקון */
+        @media (pointer: coarse) { .tj-statusbtn { padding: 10px !important; margin: -8px !important; } }
+        .tj-filterbtn { display: none; }
+        .tj-kpi-short { display: none; }
+        .tj-fab:active { transform: translateY(-14px) scale(0.94) !important; }
+        .tj-fab { transition: transform .18s var(--ease-out); }
+        /* ===== טלפון: הסרגל העליון מוחלף בניווט תחתון; המשימות עולות למעלה ===== */
         @media (max-width: 760px) {
-          .tj-toolbar { flex-direction: column; align-items: stretch !important; }
-          .tj-actions { margin-inline-start: 0 !important; }
-          .tj-newbtn { flex: 1; }
-          .tj-notify-label { display: none; }
+          .tj-toolbar { display: none !important; }
+          .tj-bottomnav { display: grid; }
+          .tj-filterbtn { display: inline-flex; }
+          .tj-sidebar-toggle:not([data-open="true"]) { display: none !important; }
+          .tj-layout { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
+          /* סדר המקטעים בדשבורד: ברכה ← מדדים ← קריטיות ← המשימות שלי ← משותפות ← צוות ← לוח שנה והשאר */
+          .tj-dash-cols, .tj-dash-cols > div { display: contents !important; }
+          .tj-critical { order: 1; }
+          .tj-mytasks { order: 2; }
+          .tj-shared { order: 3; }
+          .tj-teamstrip { order: 4; }
+          .tj-dash-cal > * { order: 5; }
+          /* מדדים: שורה אחת של ארבעה, קומפקטית */
+          .tj-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 7px !important; }
+          .tj-stat { flex-direction: column !important; gap: 7px !important; padding: 11px 4px 10px !important; text-align: center !important; border-radius: 16px !important; }
+          .tj-stat > span:first-child { width: 34px !important; height: 34px !important; border-radius: 11px !important; }
+          .tj-stat .tj-kpi-num { font-size: 21px !important; }
+          .tj-stat .tj-kpi-label { font-size: 10.5px !important; margin-top: 2px !important; }
+          .tj-kpi-full { display: none; }
+          .tj-kpi-short { display: inline; }
+          /* באנר ההתקנה: שורה אחת */
+          .tj-install { padding: 10px 12px !important; gap: 10px !important; flex-wrap: nowrap !important; }
+          .tj-install > span:first-child { width: 36px !important; height: 36px !important; }
+          .tj-install > div:nth-child(2) { flex: 1 1 0 !important; }
+          .tj-install > div:nth-child(2) > div:first-child { font-size: 13.5px !important; line-height: 1.25; }
+          .tj-install > div:last-child { gap: 4px !important; }
+          .tj-install > div:last-child > button:first-child, .tj-install > div:last-child > a { height: 36px !important; padding: 0 14px !important; font-size: 13px !important; white-space: nowrap; }
+          .tj-install-sub, .tj-install-long { display: none; }
+          .tj-install-short { display: inline !important; }
+          .tj-install[data-inapp="true"] { flex-wrap: wrap !important; }
         }
         @media (max-width: 640px) {
           /* פונט מתחת ל-16px גורם לזום אוטומטי של iOS בפוקוס על שדה */
           input, textarea, select { font-size: 16px !important; }
-          .tj-toolbar { padding: 6px !important; margin: 8px 8px 0 !important; top: 6px !important; border-radius: 20px !important; }
-          .tj-layout { padding: 10px 10px 40px !important; gap: 10px !important; }
+          .tj-layout { padding: 10px 10px calc(96px + env(safe-area-inset-bottom, 0px)) !important; gap: 10px !important; }
           .tj-card { padding: 13px !important; }
-          .tj-kpis { grid-template-columns: repeat(2,1fr) !important; gap: 8px !important; }
           .tj-calday { min-height: 52px !important; padding: 3px 3px !important; }
           .tj-calday button { font-size: 8.5px !important; padding: 1px 3px !important; }
         }
@@ -1141,9 +1246,12 @@ function SectionHead({ icon, title, count, tone, extra, tight, pal }: {
 }
 
 // ---- הכותרת: זהות ההסתדרות + של מי היומן ----
-function Header({ sync, onSyncClick, personName, personColor, isManager, teamCount }: {
+function Header({ sync, onSyncClick, onInstall, onNotify, phoneReady, personName, personColor, isManager, teamCount }: {
   sync: { icon: React.ReactNode; label: string; color: string };
   onSyncClick: () => void;
+  onInstall: () => void;
+  onNotify: () => void;
+  phoneReady: boolean;
   personName: string;
   personColor: PersonColor;
   isManager: boolean;
@@ -1220,7 +1328,22 @@ function Header({ sync, onSyncClick, personName, personColor, isManager, teamCou
             {Ic.users(13)} <span className="tj-synctext">לדשבורד הצוות</span>
           </a>
         )}
-        <button onClick={onSyncClick} title="לחיצה מציגה אבחון סנכרון" style={{
+        {/* התקנה — תמיד זמינה כשהיומן לא מותקן (גם אחרי סגירת הבאנר) */}
+        <InstallButton onOpen={onInstall} />
+        {/* בטלפון הסרגל העליון מוחלף בניווט תחתון — הפעמון עובר לכאן */}
+        <button onClick={onNotify} className="tj-header-bell" aria-label="התראות לטלפון" title="התראות לטלפון" style={{
+          position: "relative", width: 36, height: 36, borderRadius: 99, flexShrink: 0, cursor: "pointer",
+          border: `1px solid ${phoneReady ? alpha(T.mint, 40) : T.line}`,
+          background: phoneReady ? T.mintSoft : T.surface, color: phoneReady ? T.mint : T.ink2,
+          alignItems: "center", justifyContent: "center",
+        }}>
+          {Ic.bell(16)}
+          <span style={{
+            position: "absolute", top: 7, insetInlineEnd: 8, width: 7, height: 7, borderRadius: 99,
+            background: phoneReady ? T.mint : T.amber, boxShadow: `0 0 0 2px ${phoneReady ? "var(--tj-surface)" : T.surface}`,
+          }} />
+        </button>
+        <button onClick={onSyncClick} className="tj-header-sync" title="לחיצה מציגה אבחון סנכרון" style={{
           color: sync.color, display: "inline-flex", alignItems: "center", gap: 6,
           background: T.surface, border: `1px solid ${T.line}`, borderRadius: 99, padding: "5px 11px",
           fontSize: 11, fontWeight: 600, boxShadow: T.shadowSm, cursor: "pointer", fontFamily: "inherit",
@@ -1228,7 +1351,12 @@ function Header({ sync, onSyncClick, personName, personColor, isManager, teamCou
           {sync.icon}<span className="tj-synctext">{sync.label}</span>
         </button>
       </div>
-      <style>{`@media (max-width: 640px) { .tj-brandtext { display: none; } .tj-header { padding: 9px 12px !important; } }`}</style>
+      <style>{`
+        .tj-header-bell { display: none; }
+        @media (max-width: 760px) { .tj-header-bell { display: inline-flex; } .tj-header-sync { display: none !important; } }
+        @media (max-width: 640px) { .tj-brandtext { display: none; } .tj-header { padding: 9px 12px !important; gap: 9px !important; } }
+        @media (max-width: 380px) { .tj-installbtn-text { display: none; } .tj-installbtn { padding: 0 10px !important; } }
+      `}</style>
     </header>
   );
 }
@@ -1697,8 +1825,8 @@ function DayTimeline({ allFlat, todayKey, nowTick, onOpenTask }: {
   );
 }
 
-function StatCell({ label, value, icon, tone, pal, active, onClick }: {
-  label: string; value: number; icon: React.ReactNode; tone?: "danger"; pal: Pal; active: boolean; onClick: () => void;
+function StatCell({ label, short, value, icon, tone, pal, active, onClick }: {
+  label: string; short?: string; value: number; icon: React.ReactNode; tone?: "danger"; pal: Pal; active: boolean; onClick: () => void;
 }) {
   // לכל מדד צבע קבוע מהלוח; המספר נצבע אדום רק כשיש באמת בעיה
   const c = palVar(pal);
@@ -1716,7 +1844,9 @@ function StatCell({ label, value, icon, tone, pal, active, onClick }: {
       <IconChip pal={pal} size={42} radius={13}>{icon}</IconChip>
       <span style={{ minWidth: 0 }}>
         <span className="num tj-kpi-num" style={{ display: "block", fontSize: 28, fontWeight: 800, lineHeight: 1, color: tone === "danger" ? T.danger : T.ink }}>{value}</span>
-        <span style={{ display: "block", fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        <span className="tj-kpi-label" style={{ display: "block", fontSize: 12, color: T.ink2, fontWeight: 600, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <span className="tj-kpi-full">{label}</span><span className="tj-kpi-short">{short ?? label}</span>
+        </span>
       </span>
     </button>
   );
@@ -1757,6 +1887,124 @@ function NavBtn({ children, onClick, label }: { children: React.ReactNode; onCli
       background: "transparent", cursor: "pointer", color: T.ink2,
       display: "inline-flex", alignItems: "center", justifyContent: "center",
     }}>{children}</button>
+  );
+}
+
+// ============ טלפון: ניווט תחתון + גיליון "עוד" ============
+// שלושה יעדים קבועים, "+" במרכז למשימה חדשה, ו"עוד" לשאר התצוגות וההגדרות.
+// מוצג רק עד 760px (ראו ה-CSS למטה); במסך רחב נשאר הסרגל העליון.
+
+type ViewDef = { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode };
+
+const VIEW_PAL: Record<ViewKey, Pal> = {
+  dashboard: "blue", shared: "pink", team: "purple", week: "sky", table: "lavender", board: "cream", stats: "lime",
+};
+
+function BottomNav({ views, barKeys, view, onChange, onAdd, onMore, badges }: {
+  views: ViewDef[]; barKeys: ViewKey[]; view: ViewKey;
+  onChange: (v: ViewKey) => void; onAdd: () => void; onMore: () => void;
+  badges?: Partial<Record<ViewKey, number>>;
+}) {
+  const bar = barKeys.map((k) => views.find((v) => v.key === k)).filter((v): v is ViewDef => !!v);
+  const moreActive = !barKeys.includes(view);
+  const item = (key: string, label: string, icon: React.ReactNode, active: boolean, onClick: () => void, badge?: number, viewKey?: ViewKey) => (
+    <button key={key} onClick={onClick} data-view={viewKey} aria-current={active ? "page" : undefined} className="tj-bn-item" style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+      border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", padding: 0, minWidth: 0,
+      color: active ? T.accent : T.ink3,
+    }}>
+      <span style={{
+        position: "relative", width: 54, height: 30, borderRadius: 99, display: "inline-flex", alignItems: "center", justifyContent: "center",
+        background: active ? T.accentSoft : "transparent", transition: "background .25s var(--ease-out)",
+      }}>
+        {icon}
+        {!!badge && (
+          <span className="num" style={{
+            position: "absolute", top: -3, insetInlineEnd: 4, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 99,
+            background: T.accent, color: "#fff", fontSize: 10, fontWeight: 700, lineHeight: "16px", textAlign: "center",
+            boxShadow: "0 0 0 2px var(--tj-surface)",
+          }}>{badge}</span>
+        )}
+      </span>
+      <span style={{ fontSize: 10.5, fontWeight: active ? 700 : 600, lineHeight: 1 }}>{label}</span>
+    </button>
+  );
+  return (
+    <nav className="tj-bottomnav" aria-label="ניווט ראשי" style={{
+      position: "fixed", insetInline: 0, bottom: 0, zIndex: 45,
+      gridTemplateColumns: "repeat(5, minmax(0, 1fr))", alignItems: "center",
+      height: "calc(62px + env(safe-area-inset-bottom, 0px))", paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      background: "var(--tj-glass)", backdropFilter: "blur(18px) saturate(1.5)", WebkitBackdropFilter: "blur(18px) saturate(1.5)",
+      borderTop: `1px solid ${T.line}`, boxShadow: "0 -10px 30px -22px var(--tj-shadow-strong)",
+    }}>
+      {bar.slice(0, 2).map((v) => item(v.key, v.label, v.icon(20), view === v.key, () => onChange(v.key), badges?.[v.key], v.key))}
+      <span style={{ display: "flex", justifyContent: "center" }}>
+        <button onClick={onAdd} aria-label="משימה חדשה" title="משימה חדשה" className="tj-fab" style={{
+          width: 54, height: 54, borderRadius: 99, border: "none", cursor: "pointer", color: "#fff",
+          background: T.grad, display: "inline-flex", alignItems: "center", justifyContent: "center",
+          transform: "translateY(-14px)",
+          boxShadow: `0 0 0 5px var(--tj-bg), 0 14px 26px -10px ${T.glow}`,
+        }}>
+          {Ic.plus(24)}
+        </button>
+      </span>
+      {bar.slice(2).map((v) => item(v.key, v.label, v.icon(20), view === v.key, () => onChange(v.key), badges?.[v.key], v.key))}
+      {item("more", "עוד", Ic.dots(20), moreActive, onMore)}
+    </nav>
+  );
+}
+
+function MoreSheet({ views, view, onPick, theme, onToggleTheme, notifyLabel, phoneReady, onNotify, filtersActive, onFilters, sync, onSync, onInstall, onClose }: {
+  views: ViewDef[]; view: ViewKey; onPick: (v: ViewKey) => void;
+  theme: "light" | "dark"; onToggleTheme: () => void;
+  notifyLabel: string; phoneReady: boolean; onNotify: () => void;
+  filtersActive: boolean; onFilters?: () => void;
+  sync: { icon: React.ReactNode; label: string; color: string }; onSync: () => void;
+  onInstall: () => void; onClose: () => void;
+}) {
+  const { offer } = useInstallOffer();
+  const install = useInstallAction(onInstall);
+  const row = (key: string, pal: Pal, icon: React.ReactNode, title: string, sub: React.ReactNode, onClick: (() => void) | undefined, end?: React.ReactNode) => (
+    <li key={key}>
+      <button onClick={onClick} style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 4px", minHeight: 56,
+        border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "start", color: T.ink,
+      }}>
+        <IconChip pal={pal} size={36} radius={12}>{icon}</IconChip>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{title}</span>
+          <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 1 }}>{sub}</span>
+        </span>
+        {end ?? <span style={{ color: T.ink3, display: "inline-flex" }}>{Ic.chevL(14)}</span>}
+      </button>
+    </li>
+  );
+  return (
+    <Sheet title="עוד" icon={Ic.dots(16)} onClose={onClose} width={440}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        {views.map((v) => {
+          const active = view === v.key;
+          return (
+            <button key={v.key} onClick={() => onPick(v.key)} aria-current={active ? "page" : undefined} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "12px 12px", minHeight: 60, borderRadius: 16, cursor: "pointer",
+              fontFamily: "inherit", textAlign: "start", color: T.ink,
+              border: `1px solid ${active ? T.accentLine : T.line}`, background: active ? T.accentSoft : T.bg2,
+            }}>
+              <IconChip pal={VIEW_PAL[v.key]} size={36} radius={12}>{v.icon(17)}</IconChip>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{v.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <ul style={{ listStyle: "none", margin: "14px 0 0", padding: 0, borderTop: `1px solid ${T.line}` }}>
+        {offer && row("install", "blue", Ic.download(17), "התקנת האפליקציה", "אייקון במסך הבית והתראות שקופצות", install)}
+        {row("notify", "pink", Ic.bell(17), "התראות לטלפון", <span style={{ color: phoneReady ? T.mint : T.ink3 }}>{notifyLabel}</span>, onNotify)}
+        {onFilters && row("filters", "lavender", Ic.filter(17), "סינון וקטגוריות", filtersActive ? "סינון פעיל" : "חיפוש, קטגוריות, מהות וסטטוס", onFilters)}
+        {row("theme", "plum", theme === "dark" ? Ic.sun(17) : Ic.moon(17), "מצב כהה", theme === "dark" ? "פעיל" : "כבוי", onToggleTheme,
+          <span aria-hidden="true" style={{ pointerEvents: "none", display: "inline-flex" }}><Toggle on={theme === "dark"} onChange={() => {}} label="מצב כהה" /></span>)}
+        {row("sync", "sky", sync.icon, "סנכרון", <span style={{ color: sync.color }}>{sync.label}</span>, onSync)}
+      </ul>
+    </Sheet>
   );
 }
 
@@ -1940,6 +2188,7 @@ export function TaskRow({ task, cat, onOpen, onCycle, critical, compact, todayKe
             onCycle();
           }
         }}
+        className="tj-statusbtn"
         style={{
           background: "none", border: "none", cursor: "pointer", padding: 2,
           color: STATUS_COLORS[task.status], display: "inline-flex", flexShrink: 0,

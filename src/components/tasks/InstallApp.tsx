@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useToast } from "@/components/Toast";
 import { T, Ic, alpha, card, primaryBtn, ghostBtn, Sheet } from "./ui";
 import {
   installEnv, subscribeInstall, canPromptInstall, promptInstall, openInBrowserHref,
-  subscribeInstallHidden, isInstallHidden, hideInstall, type InstallEnv,
+  subscribeInstallHidden, isInstallHidden, hideInstall, isAppInstalled, detectInstalledApp, type InstallEnv,
 } from "@/lib/install";
 
 // ============================================
@@ -20,6 +20,45 @@ export function useInstallEnv(): InstallEnv | null {
 }
 function useCanPrompt(): boolean {
   return useSyncExternalStore(subscribeInstall, canPromptInstall, () => false);
+}
+
+// אפשר להציע התקנה? לא כשהיומן כבר רץ כאפליקציה, ולא כשהוא כבר מותקן במכשיר.
+// offer=true גם אחרי "לא עכשיו" על הבאנר — כפתור ההתקנה הקבוע לא נעלם אף פעם.
+export function useInstallOffer(): { offer: boolean; canPrompt: boolean; env: InstallEnv | null } {
+  const env = useInstallEnv();
+  const canPrompt = useCanPrompt();
+  const installed = useSyncExternalStore(subscribeInstall, isAppInstalled, () => false);
+  useEffect(() => { detectInstalledApp(); }, []);
+  // במחשב מציעים רק כשהדפדפן באמת מאפשר התקנה; בטלפון תמיד (באייפון זה דרך "הוספה למסך הבית")
+  const offer = !!env && !env.standalone && !installed && (env.mobile || canPrompt);
+  return { offer, canPrompt, env };
+}
+
+// התקנה בלחיצה אחת כשהדפדפן מאפשר; אחרת — גיליון ההוראות
+export function useInstallAction(onOpenSheet: () => void): () => Promise<void> {
+  const { toast } = useToast();
+  return async () => {
+    if (!canPromptInstall()) return onOpenSheet();
+    const r = await promptInstall();
+    if (r === "accepted") toast("היומן הותקן — האייקון מחכה במסך הבית", "success");
+    else if (r === "unavailable") onOpenSheet();
+  };
+}
+
+// ---------- כפתור התקנה קבוע (בכותרת) — לא תלוי בבאנר ----------
+export function InstallButton({ onOpen }: { onOpen: () => void }) {
+  const { offer } = useInstallOffer();
+  const install = useInstallAction(onOpen);
+  if (!offer) return null;
+  return (
+    <button onClick={install} className="tj-installbtn" aria-label="התקנת היומן כאפליקציה" title="התקנת היומן כאפליקציה" style={{
+      display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 99,
+      border: `1px solid ${T.accentLine}`, background: T.accentSoft, color: T.accent, cursor: "pointer",
+      fontFamily: "inherit", fontSize: 12, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap",
+    }}>
+      {Ic.download(14)} <span className="tj-installbtn-text">התקנה</span>
+    </button>
+  );
 }
 
 const browserName = (env: InstallEnv) => (env.os === "ios" ? "Safari" : "Chrome");
@@ -43,23 +82,15 @@ async function copyLink(toast: (m: string, t?: "success" | "error") => void) {
 
 // ---------- באנר בראש הדשבורד (רק בטלפון / כשאפשר להתקין, ולא אם כבר מותקן) ----------
 export function InstallBanner({ journalId, onOpen }: { journalId: string; onOpen: () => void }) {
-  const env = useInstallEnv();
-  const canPrompt = useCanPrompt();
+  const { offer, canPrompt, env } = useInstallOffer();
   const hidden = useSyncExternalStore(subscribeInstallHidden, () => isInstallHidden(journalId), () => true);
-  const { toast } = useToast();
-  if (!env || env.standalone || hidden) return null;
-  if (!env.mobile && !canPrompt) return null;
+  const install = useInstallAction(onOpen);
+  if (!offer || !env || hidden) return null;
 
   const href = env.inApp ? openInBrowserHref(env, window.location.href) : null;
-  async function install() {
-    if (!canPrompt) return onOpen();
-    const r = await promptInstall();
-    if (r === "accepted") { hideInstall(journalId); toast("היומן הותקן — האייקון מחכה במסך הבית", "success"); }
-    else if (r === "unavailable") onOpen();
-  }
 
   return (
-    <section className="tj-card tj-install" aria-label="התקנת היומן כאפליקציה" style={{
+    <section className="tj-card tj-install" data-inapp={!!href} aria-label="התקנת היומן כאפליקציה" style={{
       ...card, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
       background: `linear-gradient(135deg, ${alpha("var(--tj-accent)", 11)} 0%, ${alpha("var(--tj-accent)", 2)} 65%), var(--tj-surface)`,
       border: `1px solid ${T.accentLine}`,
@@ -67,9 +98,9 @@ export function InstallBanner({ journalId, onOpen }: { journalId: string; onOpen
       <AppIcon />
       <div style={{ flex: "1 1 190px", minWidth: 0 }}>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: T.ink, letterSpacing: "-0.01em" }}>
-          {env.inApp ? `היומן פתוח כרגע בתוך ${env.inApp}` : "היומן כאפליקציה בטלפון"}
+          {env.inApp ? `היומן פתוח כרגע בתוך ${env.inApp}` : env.mobile ? "היומן כאפליקציה בטלפון" : "היומן כאפליקציה"}
         </div>
-        <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 2, lineHeight: 1.5 }}>
+        <div className="tj-install-sub" style={{ fontSize: 12.5, color: T.ink2, marginTop: 2, lineHeight: 1.5 }}>
           {env.inApp
             ? `משם אי אפשר להתקין. פותחים ב-${browserName(env)} ומתקינים — פחות מדקה.`
             : "אייקון במסך הבית, פתיחה במסך מלא והתראות שקופצות. חינם, בלי חנות אפליקציות."}
@@ -82,7 +113,7 @@ export function InstallBanner({ journalId, onOpen }: { journalId: string; onOpen
           </a>
         ) : (
           <button onClick={install} style={{ ...primaryBtn, height: 40, padding: "0 18px" }}>
-            {Ic.download(15)} {canPrompt ? "התקנה" : "איך מתקינים"}
+            {Ic.download(15)} {canPrompt ? "התקנה" : <><span className="tj-install-long">איך מתקינים</span><span className="tj-install-short">התקנה</span></>}
           </button>
         )}
         {href && <button onClick={onOpen} style={{ ...ghostBtn, height: 40 }}>הסבר</button>}

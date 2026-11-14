@@ -2,7 +2,7 @@ import { fetchRosterServer } from "@/lib/server/roster-fetch";
 import { memberById, isValidJournalId, PERSON_COLORS } from "@/lib/journals";
 
 // manifest לכל יומן: "הוספה למסך הבית" פותחת את היומן הנכון ולא את של אופיר
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const member = isValidJournalId(id) ? memberById(await fetchRosterServer(), id) : null;
   const name = member ? `היומן של ${member.name}` : "יומן המשימות";
@@ -18,6 +18,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     theme_color: PERSON_COLORS[member?.color ?? "teal"].solid,
     dir: "rtl",
     lang: "he",
+    // מאפשר לכרום לדווח אם היומן הזה כבר מותקן (getInstalledRelatedApps)
+    related_applications: [{ platform: "webapp", url: `${new URL(req.url).origin}/j/${id}/manifest` }],
+    prefer_related_applications: false,
     // הלוגו של האפליקציה (התמונה) — אותו לוגו לכל היומנים
     icons: [
       { src: "/icon-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },

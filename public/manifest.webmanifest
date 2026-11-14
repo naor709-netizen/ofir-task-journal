@@ -35,5 +35,12 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://ofir-task-journal.vercel.app/manifest.webmanifest"
+    }
+  ],
+  "prefer_related_applications": false
 }

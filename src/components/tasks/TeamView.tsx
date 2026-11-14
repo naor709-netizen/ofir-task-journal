@@ -1066,7 +1066,7 @@ export function TeamStrip({ todayKey, onOpenMember }: { todayKey: string; onOpen
   useEffect(() => { if (members.length) initTeamData(); }, [members.length]);
   if (!members.length) return null;
   return (
-    <section className="tj-card" style={{ ...card, padding: 14 }}>
+    <section className="tj-card tj-teamstrip" style={{ ...card, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <IconChip pal="sky" size={30} radius={10}>{Ic.users(15)}</IconChip>
         <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, fontFamily: "var(--font-display)", letterSpacing: "-0.015em" }}>הצוות</h2>

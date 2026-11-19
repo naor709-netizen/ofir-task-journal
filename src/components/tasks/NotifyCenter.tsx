@@ -402,7 +402,7 @@ function TelegramSetupSteps() {
       <Note tone="amber">הבוט עוד לא הוגדר. זה חד-פעמי, בחינם, כ-2 דקות:</Note>
       <ol style={{ margin: "10px 0 0", paddingInlineStart: 18 }}>
         <li>בטלגרם פותחים את <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>@BotFather</a> ושולחים <code className="num">/newbot</code>.</li>
-        <li>בוחרים שם (למשל ״היומן של אופיר״) ושם משתמש שמסתיים ב-<code className="num">bot</code>.</li>
+        <li>בוחרים שם (למשל ״משימות הסברה״) ושם משתמש שמסתיים ב-<code className="num">bot</code>.</li>
         <li>מעתיקים את הטוקן שמתקבל.</li>
         <li>ב-Vercel → Settings → Environment Variables מוסיפים <code className="num">TELEGRAM_BOT_TOKEN</code> עם הטוקן, ופורסים מחדש.</li>
         <li>חוזרים לכאן ולוחצים ״חיבור טלגרם״. נדין עושה את אותו הדבר מהיומן שלה.</li>

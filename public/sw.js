@@ -1,4 +1,4 @@
-// Service worker — יומן המשימות (Web Push)
+// Service worker — אפליקציית משימות אגף הסברה, דוברות ופרסום (Web Push)
 // v5: שחזור מנוי אוטומטי (pushsubscriptionchange) + ניווט ליומן הנכון בלחיצה
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
@@ -6,13 +6,13 @@ self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data ? event.data.text() : "" }; }
-  const title = data.title || "יומן המשימות";
+  const title = data.title || "משימות הסברה";
   const body = data.body || "יש לך תזכורת";
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      icon: "/icon-192.png?v=3",
+      badge: "/icon-192.png?v=3",
       dir: "rtl",
       lang: "he",
       tag: data.tag || undefined,

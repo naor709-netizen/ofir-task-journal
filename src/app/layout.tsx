@@ -3,18 +3,19 @@ import { GLOBAL_CSS } from "./global-css";
 import { ToastProvider } from "@/components/Toast";
 import { INSTALL_CAPTURE_SCRIPT } from "@/lib/install";
 import { INTRO_SKIP_SCRIPT, INTRO_BOOT_SCRIPT } from "@/lib/intro";
+import { APP_NAME, APP_DEPT, APP_FULL, APP_SHORT, iconUrl } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: "יומן המשימות של אופיר",
+  title: APP_FULL,
   description: "יומן משימות אישי — לוח שנה, קטגוריות, תזכורות, שלבים ותצוגות מרובות",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "היומן של אופיר" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: APP_SHORT },
   icons: {
     icon: [
-      { url: "/favicon-64.png?v=2", sizes: "64x64", type: "image/png" },
-      { url: "/icon-192.png?v=2", sizes: "192x192", type: "image/png" },
+      { url: iconUrl("favicon-64.png"), sizes: "64x64", type: "image/png" },
+      { url: iconUrl("icon-192.png"), sizes: "192x192", type: "image/png" },
     ],
-    apple: [{ url: "/apple-touch-icon.png?v=2", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: iconUrl("apple-touch-icon.png"), sizes: "180x180", type: "image/png" }],
   },
 };
 
@@ -45,14 +46,18 @@ export default function RootLayout({
               `var f=document.createElement("link");f.rel="stylesheet";f.href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=Rubik:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";document.head.appendChild(f);`,
           }}
         />
-        {/* פתיח: סרטון בלי קול על כל המסך, ואז מעבר הדרגתי ליומן (src/lib/intro.ts).
-            HTML סטטי + סקריפט מוטמע — מתחיל מיד, בלי לחכות לטעינת האפליקציה. */}
-        <div id="tj-intro" className="tj-intro" suppressHydrationWarning>
-          <div className="tj-intro-media">
-            <video id="tj-intro-video" playsInline preload="auto" aria-label="היומן השיתופי של אופיר"
-              disablePictureInPicture suppressHydrationWarning />
+        {/* פתיח: שם האפליקציה + וי שמצטייר, ואז מעבר הדרגתי (src/lib/intro.ts).
+            HTML סטטי + סקריפט מוטמע — מופיע מיד, בלי לחכות לטעינת האפליקציה. */}
+        <div id="tj-intro" className="tj-intro" aria-label={APP_FULL} suppressHydrationWarning>
+          <div className="tj-intro-brand">
+            <svg className="tj-intro-mark" width="96" height="96" viewBox="0 0 88 88" aria-hidden="true">
+              <rect x="10" y="12" width="64" height="64" rx="17" fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="5" />
+              <path className="tj-intro-check" d="M24 45 L39 60.5 L75.5 17" fill="none" stroke="#fff" strokeWidth="9"
+                strokeLinecap="round" strokeLinejoin="round" pathLength={100} />
+            </svg>
+            <div className="tj-intro-name">{APP_NAME}</div>
+            <div className="tj-intro-dept">{APP_DEPT}</div>
           </div>
-          <button type="button" className="tj-intro-skip">כניסה ליומן</button>
         </div>
         <script dangerouslySetInnerHTML={{ __html: INTRO_BOOT_SCRIPT }} />
         <ToastProvider>{children}</ToastProvider>

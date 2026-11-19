@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     if (!(await takeDailyQuota(sb))) return NextResponse.json({ error: "daily-cap", hint: "הגעתם למכסת קודי האימות להיום" }, { status: 429 });
 
     const code = newCode();
-    const r = await sendSms(phone, `קוד האימות ליומן המשימות: ${code}\nבתוקף ל-${CODE_TTL_MIN} דקות.`);
+    const r = await sendSms(phone, `קוד האימות לאפליקציית המשימות: ${code}\nבתוקף ל-${CODE_TTL_MIN} דקות.`);
     if (!r.ok) return NextResponse.json({ error: "send-failed", code: r.code, hint: twilioHint(r.code) }, { status: 502 });
 
     const pending: Pending = {

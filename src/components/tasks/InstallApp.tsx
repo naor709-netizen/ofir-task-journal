@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useToast } from "@/components/Toast";
+import { APP_NAME, APP_DEPT, iconUrl } from "@/lib/brand";
 import { T, Ic, alpha, card, primaryBtn, ghostBtn, Sheet } from "./ui";
 import {
   installEnv, subscribeInstall, canPromptInstall, promptInstall, openInBrowserHref,
@@ -65,7 +66,7 @@ const browserName = (env: InstallEnv) => (env.os === "ios" ? "Safari" : "Chrome"
 
 // האייקון שיופיע במסך הבית — הלוגו של האפליקציה
 function AppIcon({ size = 46 }: { size?: number }) {
-  const src = "/icon-192.png";
+  const src = iconUrl("icon-192.png");
   return (
     <span aria-hidden="true" style={{
       width: size, height: size, borderRadius: size * 0.28, flexShrink: 0,
@@ -144,8 +145,9 @@ export function InstallSheet({ personName, onClose }: { personName: string; onCl
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
         <AppIcon size={58} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: T.ink }}>היומן של {personName}</div>
-          <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>חינם · בלי חנות אפליקציות · פחות מדקה</div>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: T.ink }}>{APP_NAME}</div>
+          <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 1 }}>{APP_DEPT}</div>
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>היומן של {personName} · חינם · בלי חנות אפליקציות</div>
         </div>
       </div>
 

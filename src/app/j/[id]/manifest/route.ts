@@ -1,15 +1,16 @@
 import { fetchRosterServer } from "@/lib/server/roster-fetch";
 import { memberById, isValidJournalId, PERSON_COLORS } from "@/lib/journals";
+import { APP_FULL, APP_SHORT, iconUrl } from "@/lib/brand";
 
 // manifest לכל יומן: "הוספה למסך הבית" פותחת את היומן הנכון ולא את של אופיר
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const member = isValidJournalId(id) ? memberById(await fetchRosterServer(), id) : null;
-  const name = member ? `היומן של ${member.name}` : "יומן המשימות";
   const body = {
-    name,
-    short_name: member ? member.name : "היומן",
-    description: "יומן משימות אישי — לוח שנה, קטגוריות, תזכורות ותצוגות מרובות",
+    // אותו שם אפליקציה לכולם; היומן האישי נפתח לפי הכתובת (start_url)
+    name: member ? `${APP_FULL} · ${member.name}` : APP_FULL,
+    short_name: APP_SHORT,
+    description: "אפליקציית המשימות של אגף הסברה, דוברות ופרסום — לוח שנה, קטגוריות, תזכורות ותצוגות מרובות",
     id: `/j/${id}`,
     start_url: `/j/${id}`,
     scope: "/",
@@ -23,10 +24,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     prefer_related_applications: false,
     // הלוגו של האפליקציה (התמונה) — אותו לוגו לכל היומנים
     icons: [
-      { src: "/icon-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icon-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/icon-maskable-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "maskable" },
-      { src: "/icon-maskable-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: iconUrl("icon-192.png"), sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: iconUrl("icon-512.png"), sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: iconUrl("icon-maskable-192.png"), sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: iconUrl("icon-maskable-512.png"), sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
   return new Response(JSON.stringify(body), {

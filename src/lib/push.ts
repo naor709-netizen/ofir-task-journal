@@ -167,8 +167,8 @@ export async function showLocalNotification(title: string, body: string, tag?: s
     if (reg) {
       await reg.showNotification(title, {
         body,
-        icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        icon: "/icon-192.png?v=3",
+        badge: "/icon-192.png?v=3",
         dir: "rtl",
         lang: "he",
         tag,
@@ -179,7 +179,7 @@ export async function showLocalNotification(title: string, body: string, tag?: s
     /* fall through */
   }
   try {
-    new Notification(title, { body, icon: "/icon-192.png", tag });
+    new Notification(title, { body, icon: "/icon-192.png?v=3", tag });
   } catch {
     /* best-effort */
   }

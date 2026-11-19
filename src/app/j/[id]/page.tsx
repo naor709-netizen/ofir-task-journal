@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import JournalApp from "@/components/tasks/JournalApp";
 import { fetchRosterServer } from "@/lib/server/roster-fetch";
 import { memberById, isValidJournalId } from "@/lib/journals";
+import { APP_FULL, APP_SHORT } from "@/lib/brand";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -10,10 +11,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const member = isValidJournalId(id) ? memberById(await fetchRosterServer(), id) : null;
   const name = member?.name ?? "היומן שלי";
   return {
-    title: member ? `היומן של ${name}` : "יומן המשימות",
-    description: "יומן משימות אישי — לוח שנה, קטגוריות, תזכורות, שלבים ותצוגות מרובות",
+    title: member ? `${name} · ${APP_FULL}` : APP_FULL,
+    description: "אפליקציית המשימות של אגף הסברה, דוברות ופרסום — לוח שנה, קטגוריות, תזכורות, שלבים ותצוגות מרובות",
     manifest: `/j/${id}/manifest`,
-    appleWebApp: { capable: true, statusBarStyle: "default", title: member ? name : "היומן שלי" }, // קצר — נכנס מתחת לאייקון
+    appleWebApp: { capable: true, statusBarStyle: "default", title: APP_SHORT }, // קצר — נכנס מתחת לאייקון
   };
 }
 

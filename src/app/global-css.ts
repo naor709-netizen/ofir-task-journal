@@ -296,50 +296,40 @@ input::placeholder, textarea::placeholder { color: var(--tj-ink3); opacity: 1; }
   }
 }
 
-/* ---- פתיח: סרטון בלי קול על כל המסך, ואז מעבר הדרגתי ליומן ---- */
-/* בלי מסגרת ובלי קופסה: הרקע הוא הכחול של שולי הסרטון עצמו, והקצוות שלו נמוגים לתוכו. */
+/* ---- פתיח: שם האפליקציה + וי שמצטייר, ואז מעבר הדרגתי (~1.3s) ---- */
+/* הרקע תואם ל-background_color ב-manifest, כך שמסך הפתיחה של אנדרואיד ממשיך ישר לכאן. */
 .tj-intro {
   position: fixed; inset: 0; z-index: 400; overflow: hidden; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, #0B2B7C 0%, #143E95 36%, #143E95 64%, #0B2B7C 100%);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background:
+    radial-gradient(60% 45% at 50% 42%, rgba(61,142,240,0.55) 0%, rgba(61,142,240,0) 72%),
+    linear-gradient(180deg, #0B2B7C 0%, #143E95 40%, #143E95 60%, #0B2B7C 100%);
   opacity: 1; transition: opacity .45s var(--ease-out);
 }
 html[data-intro="skip"] .tj-intro, .tj-intro[data-phase="gone"] { display: none; }
 .tj-intro[data-phase="leaving"] { opacity: 0; pointer-events: none; }
-/* טלפון לאורך: הסרטון ברוחב מלא ומוגדל מעט (חיתוך עדין בצדדים), עם קצה עליון ותחתון שנמוג */
-.tj-intro-media {
-  position: relative; width: 100vw; height: min(100dvh, 92vw);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 11%, #000 89%, transparent 100%);
-  mask-image: linear-gradient(180deg, transparent 0, #000 11%, #000 89%, transparent 100%);
+.tj-intro-brand {
+  display: flex; flex-direction: column; align-items: center; text-align: center; color: #fff;
   transition: transform .6s var(--ease-out);
 }
-.tj-intro[data-phase="leaving"] .tj-intro-media { transform: scale(1.04); }
-/* הפריים הראשון, קטן ומטושטש, מוטמע בדף — משהו מופיע מיד, עוד לפני שהסרטון ירד */
-.tj-intro-media::before {
-  content: ""; position: absolute; inset: 0;
-  background: url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//gAQTGF2YzYwLjMxLjEwMgD/2wBDAA4KCw0LCQ4NDA0QDw4RFiQXFhQUFiwgIRokNC43NjMuMjI6QVNGOj1OPjIySGJJTlZYXV5dOEVmbWVabFNbXVn/2wBDAQ8QEBYTFioXFypZOzI7WVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVn/wAARCAASACADASIAAhEBAxEB/8QAGQAAAgMBAAAAAAAAAAAAAAAAAAYCBAUH/8QAJRAAAgEDBAEEAwAAAAAAAAAAAQIDAAQRBRIhMUETFGFxIlGB/8QAGAEAAwEBAAAAAAAAAAAAAAAAAwQFAQL/xAAfEQABBAICAwAAAAAAAAAAAAABAAIEMQMSEyEyM0H/2gAMAwEAAhEDEQA/AFyC1aVwAAM1t21jDbzhJYklMke4nblkA+fFXIdP9AFzxt5zVzTpYZ9QSFlSaUo5EZyMgfP77qjNe3UMB7tLQ9nE5PlKreadA0e6JQCesHg0sXdqUcgjkHxXTIGaAO12kFsBjYqOAT94FJ2rxIt7MoKH8u1OR/KPFzHKdSFwcPHRTSyqwIKgg9gil3XwI7kFAFKxrtxxjk9UUUqbQ4dKdsq+xBwM7jzj6rPPb0UVRj+K1vtK/9k=) 60% 50% / cover no-repeat;
-  filter: blur(14px); transform: scale(1.08);
-  transition: opacity .5s var(--ease-out);
+.tj-intro[data-phase="leaving"] .tj-intro-brand { transform: scale(1.04); }
+.tj-intro-mark { animation: tj-intro-pop .55s var(--ease-out) both; }
+.tj-intro-check { stroke-dasharray: 100; stroke-dashoffset: 100; animation: tj-intro-draw .5s .2s var(--ease-out) forwards; }
+.tj-intro-name {
+  margin-top: 18px; font: 800 clamp(26px, 7vw, 38px)/1.15 var(--font-display); letter-spacing: -0.02em;
+  text-wrap: balance; animation: tj-intro-rise .5s .14s var(--ease-out) both;
 }
-.tj-intro[data-playing] .tj-intro-media::before { opacity: 0; }
-.tj-intro-media video {
-  position: relative; width: 100%; height: 100%; display: block;
-  object-fit: cover; object-position: 60% 50%; background: transparent;
+.tj-intro-dept {
+  margin-top: 8px; font-size: clamp(15px, 4vw, 18px); font-weight: 500; line-height: 1.4; color: rgba(255,255,255,0.84);
+  text-wrap: balance; animation: tj-intro-rise .5s .24s var(--ease-out) both;
 }
-/* מסך רחב: הסרטון ממלא את כל המסך, בלי שוליים */
-@media (min-aspect-ratio: 5/4) {
-  .tj-intro-media { height: 100dvh; -webkit-mask-image: none; mask-image: none; }
-  .tj-intro-media::before { background-position: 50% 50%; }
-  .tj-intro-media video { object-position: 50% 50%; }
+@keyframes tj-intro-pop { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: none; } }
+@keyframes tj-intro-draw { to { stroke-dashoffset: 0; } }
+@keyframes tj-intro-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .tj-intro-mark, .tj-intro-name, .tj-intro-dept { animation: none; }
+  .tj-intro-check { animation: none; stroke-dashoffset: 0; }
 }
-.tj-intro-skip {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  bottom: calc(26px + env(safe-area-inset-bottom, 0px));
-  height: 40px; padding: 0 20px; border-radius: 99px; cursor: pointer;
-  border: 1px solid rgba(255,255,255,0.45); background: rgba(9,30,90,0.35); color: #fff;
-  font: 600 13.5px/1 var(--font-display); letter-spacing: -0.01em;
-}
-.tj-intro-skip:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
   .tj-aurora i, .tj-live::after, .tj-skel { animation: none !important; }

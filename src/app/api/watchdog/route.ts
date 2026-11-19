@@ -49,9 +49,9 @@ export async function POST(req: Request) {
   const readable = problems.map((p) => PROBLEM_TEXT[p] ?? p);
   const out = await notify(
     sb,
-    { title: "🚨 תקלה ביומן המשימות", body: readable.join(" · "), tag: "watchdog" },
+    { title: "🚨 תקלה באפליקציית המשימות", body: readable.join(" · "), tag: "watchdog" },
     {
-      subject: "🚨 תקלה ביומן המשימות של אופיר",
+      subject: "🚨 תקלה באפליקציית המשימות — אגף הסברה, דוברות ופרסום",
       html: emailShell("🚨 זוהתה תקלה", [
         ...readable.map((r) => `<span style="color:#DC2626">${r}</span>`),
         `<br><span style="color:#7C8DA4">אם מדובר בתזכורות שנעצרו — יש לבדוק את המשימה <b>ofir-reminders</b> ב-Supabase (Database → Cron).</span>`,

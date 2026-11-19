@@ -18,6 +18,7 @@ import {
 import { pushPermission, isSubscribed, showLocalNotification, syncPushSubscription } from "@/lib/push";
 import { subscribeTeamMeta, getTeamMeta, getServerTeamMeta, markManagerDevice } from "@/lib/team";
 import { MANAGER_ID, MANAGER_NAME, firstName, type PersonColor } from "@/lib/journals";
+import { APP_NAME, APP_DEPT, iconUrl } from "@/lib/brand";
 import { parseQuickAdd, hebrewDateToday } from "@/lib/quickadd";
 import { celebrate } from "@/lib/celebrate";
 import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, ProgressRing, primaryBtn, IconChip, palVar, Sheet, Toggle, type Pal } from "./ui";
@@ -1282,38 +1283,37 @@ function Header({ sync, onSyncClick, onInstall, onNotify, phoneReady, personName
         </div>
       </div>
       <div className="tj-brandtext" style={{ width: 1, height: 30, background: T.line, marginInline: 4 }} />
-      {/* הלוגו של האפליקציה: ביומן של אופיר הוא גם התמונה שלו; אצל איש צוות — האווטר האישי */}
-      {isManager ? (
-        <span className="tj-applogo" style={{
-          width: 40, height: 40, borderRadius: 13, overflow: "hidden", flexShrink: 0, display: "inline-flex",
-          boxShadow: `0 0 0 2px var(--tj-surface), 0 0 0 3.5px ${alpha("var(--tj-accent)", 55)}, 0 8px 18px -10px ${T.glow}`,
-        }}>
-          <Image src="/logo-face.png" alt="היומן השיתופי של אופיר" width={40} height={40} priority
-            style={{ width: 40, height: 40, objectFit: "cover" }} />
-        </span>
-      ) : (
-        <Avatar name={personName} color={personColor} size={36} />
-      )}
+      {/* שם האפליקציה (src/lib/brand.ts) — בלי תמונה */}
+      <Image src={iconUrl("icon-192.png")} alt="" width={36} height={36} priority unoptimized
+        style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, boxShadow: `0 0 0 1px ${T.line}, 0 6px 14px -8px ${T.glow}` }} />
       <div style={{ lineHeight: 1.2, minWidth: 0 }}>
         <h1 style={{
           margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: T.ink,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "-0.015em",
         }}>
-          היומן של {personName}
+          {APP_NAME}
         </h1>
-        <div style={{ fontSize: 11, color: T.ink3, display: "flex", alignItems: "center", gap: 5 }}>
-          {isManager ? (
-            <>
-              <span style={{ color: T.accent, display: "inline-flex" }}>{Ic.crown(11)}</span>
-              {teamCount > 0 ? `מנהל · ${teamCount} ${teamCount === 1 ? "איש צוות" : "אנשי צוות"}` : "היומן השיתופי"}
-            </>
-          ) : (
-            <>
-              <Image src="/logo-face.png" alt="" width={16} height={16}
-                style={{ width: 16, height: 16, borderRadius: 99, objectFit: "cover", boxShadow: `0 0 0 1px ${T.line}` }} />
-              היומן השיתופי של {MANAGER_NAME}
-            </>
-          )}
+        <div style={{ fontSize: 11.5, color: T.ink2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {APP_DEPT}
+        </div>
+      </div>
+      {/* של מי היומן — במסך רחב עם שם ותפקיד, בטלפון נשאר רק בברכה ("בוקר טוב, אופיר") */}
+      <div className="tj-person" style={{ display: "flex", alignItems: "center", gap: 9, paddingInlineStart: 12, marginInlineStart: 2, borderInlineStart: `1px solid ${T.line}`, minWidth: 0 }}>
+        <Avatar name={personName} color={personColor} size={32} />
+        <div style={{ lineHeight: 1.2, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            היומן של {personName}
+          </div>
+          <div style={{ fontSize: 11, color: T.ink3, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+            {isManager ? (
+              <>
+                <span style={{ color: T.accent, display: "inline-flex" }}>{Ic.crown(11)}</span>
+                {teamCount > 0 ? <>מנהל · <span className="num">{teamCount}</span> {teamCount === 1 ? "איש צוות" : "אנשי צוות"}</> : "מנהל"}
+              </>
+            ) : (
+              <>הצוות של {MANAGER_NAME}</>
+            )}
+          </div>
         </div>
       </div>
       <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1354,7 +1354,8 @@ function Header({ sync, onSyncClick, onInstall, onNotify, phoneReady, personName
       <style>{`
         .tj-header-bell { display: none; }
         @media (max-width: 760px) { .tj-header-bell { display: inline-flex; } .tj-header-sync { display: none !important; } }
-        @media (max-width: 640px) { .tj-brandtext { display: none; } .tj-header { padding: 9px 12px !important; gap: 9px !important; } }
+        @media (max-width: 960px) { .tj-person > div { display: none; } }
+        @media (max-width: 640px) { .tj-brandtext, .tj-person { display: none !important; } .tj-header { padding: 9px 12px !important; gap: 9px !important; } }
         @media (max-width: 380px) { .tj-installbtn-text { display: none; } .tj-installbtn { padding: 0 10px !important; } }
       `}</style>
     </header>

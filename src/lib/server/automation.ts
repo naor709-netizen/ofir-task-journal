@@ -216,7 +216,7 @@ export async function sendEmail(subject: string, html: string): Promise<"sent" |
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM || "יומן המשימות <onboarding@resend.dev>",
+        from: process.env.RESEND_FROM || "משימות הסברה <onboarding@resend.dev>",
         to: to.split(",").map((s) => s.trim()).filter(Boolean),
         subject,
         html,
@@ -233,9 +233,9 @@ export function emailShell(heading: string, lines: string[], cta = true): string
   return `<div dir="rtl" style="font-family:system-ui,Arial,sans-serif;background:#F2F5F9;padding:24px">
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:24px;border:1px solid rgba(23,43,77,.12)">
     <h1 style="margin:0 0 4px;font-size:19px;color:#15253F">${heading}</h1>
-    <p style="margin:0 0 16px;font-size:12px;color:#7C8DA4">יומן המשימות של אופיר</p>
+    <p style="margin:0 0 16px;font-size:12px;color:#7C8DA4">אפליקציית משימות · אגף הסברה, דוברות ופרסום</p>
     <ul style="margin:0;padding-inline-start:18px;font-size:14px;color:#15253F;line-height:1.6">${items}</ul>
-    ${cta ? `<a href="${appUrl()}" style="display:inline-block;margin-top:18px;background:#1D4FD7;color:#fff;text-decoration:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:700">פתיחת היומן</a>` : ""}
+    ${cta ? `<a href="${appUrl()}" style="display:inline-block;margin-top:18px;background:#1D4FD7;color:#fff;text-decoration:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:700">פתיחת האפליקציה</a>` : ""}
   </div>
 </div>`;
 }

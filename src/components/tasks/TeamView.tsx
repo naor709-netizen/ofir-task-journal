@@ -1174,7 +1174,7 @@ function ShareDialog({ member, onClose }: { member: TeamMember; onClose: () => v
   const url = journalUrl(member.id);
   const msg = [
     `היי ${member.name}!`,
-    `זה יומן המשימות שלך: ${url}`,
+    `זה היומן האישי שלך באפליקציית המשימות של אגף הסברה, דוברות ופרסום: ${url}`,
     "",
     "להתקנה כאפליקציה (פעם אחת, חינם):",
     "• אייפון — לפתוח ב-Safari ← שיתוף ← ״הוספה למסך הבית״",

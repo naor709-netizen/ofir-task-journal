@@ -25,7 +25,7 @@ import { T, alpha, card, tintCard, chip, inputStyle, Ic, StatusIcon, Avatar, Pro
 import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 import { NotifyCenter } from "./NotifyCenter";
-import { InstallBanner, InstallSheet, InstallButton, useInstallOffer, useInstallAction } from "./InstallApp";
+import { InstallBanner, InstallSheet, InstallButton, useInstallOffer, useInstallAction, useInstallEnv } from "./InstallApp";
 import { SummaryBoard } from "./SummaryBoard";
 import { TeamView, TeamStrip } from "./TeamView";
 import { Donut, Legend, DayBars, DayBarsLegend } from "./charts";
@@ -165,14 +165,15 @@ export default function TaskJournal({ journalId, personName, personColor }: {
 
   // ---- push notifications ----
   const [pushState, setPushState] = useState<"unsupported" | "off" | "on" | "denied">("off");
+  const [pushKnown, setPushKnown] = useState(false); // עד שהבדיקה מסתיימת — לא מציגים "כבויות"
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const perm = pushPermission();
-      if (perm === "unsupported") { if (!cancelled) setPushState("unsupported"); return; }
-      if (perm === "denied") { if (!cancelled) setPushState("denied"); return; }
+      if (perm === "unsupported") { if (!cancelled) { setPushState("unsupported"); setPushKnown(true); } return; }
+      if (perm === "denied") { if (!cancelled) { setPushState("denied"); setPushKnown(true); } return; }
       const sub = await isSubscribed();
-      if (!cancelled) setPushState(sub && perm === "granted" ? "on" : "off");
+      if (!cancelled) { setPushState(sub && perm === "granted" ? "on" : "off"); setPushKnown(true); }
       // מרענן את המנוי בשרת בכל פתיחה — מרפא מכשירים שנמחקו ומצמיד ליומן הנכון
       if (sub) syncPushSubscription(journalId);
     })();
@@ -900,6 +901,9 @@ export default function TaskJournal({ journalId, personName, personColor }: {
           {view === "dashboard" && (
             <>
               <InstallBanner journalId={journalId} onOpen={() => setInstallOpen(true)} />
+              {pushKnown && teamMeta.loaded && !phoneReady && (
+                <NotifyNudge journalId={journalId} denied={pushState === "denied"} onOpen={() => setNotifyOpen(true)} />
+              )}
               <Hero
                 personName={personName}
                 today={today}
@@ -2026,6 +2030,50 @@ function MoreSheet({ views, view, onPick, theme, onToggleTheme, notifyLabel, pho
         {row("sync", "sky", sync.icon, "סנכרון", <span style={{ color: sync.color }}>{sync.label}</span>, onSync)}
       </ul>
     </Sheet>
+  );
+}
+
+// ---- "ההתראות כבויות במכשיר הזה" — אחרי התקנה מחדש / מכשיר חדש צריך להפעיל שוב ----
+const nudgeKey = (jid: string) => `tj-notify-nudge@${jid}`;
+function NotifyNudge({ journalId, denied, onOpen }: { journalId: string; denied: boolean; onOpen: () => void }) {
+  const env = useInstallEnv();
+  // "לא עכשיו" שקט ל-3 ימים (החישוב מול השעון נעשה בתוך ה-snapshot, לא בזמן הציור)
+  const snoozed = useSyncExternalStore(noopSubscribe, () => {
+    try { const at = Number(localStorage.getItem(nudgeKey(journalId)) || 0); return at > 0 && Date.now() - at < 3 * 86400_000; } catch { return false; }
+  }, () => true);
+  const [hiddenNow, setHiddenNow] = useState(false);
+  // באייפון בדפדפן אי אפשר להפעיל לפני התקנה — שם באנר ההתקנה מטפל בזה
+  if (!env || hiddenNow || snoozed) return null;
+  if (env.os === "ios" && !env.standalone) return null;
+  return (
+    <section className="tj-card tj-nudge" role="status" style={{
+      ...card, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+      border: `1px solid ${alpha(T.amber, 35)}`, background: `linear-gradient(135deg, ${alpha(T.amber, 9)}, ${alpha(T.amber, 2)} 70%), var(--tj-surface)`,
+    }}>
+      <IconChip pal="pink" size={38} radius={12}>{Ic.bell(17)}</IconChip>
+      <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 14, color: T.ink, fontFamily: "var(--font-display)" }}>
+          {denied ? "ההתראות חסומות במכשיר הזה" : "ההתראות כבויות במכשיר הזה"}
+        </div>
+        <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 2, lineHeight: 1.5 }}>
+          {denied
+            ? "הטלפון חוסם התראות מהאפליקציה — בלי זה תזכורות לא יקפצו. מתקנים בהגדרות, בשתי דקות."
+            : "כדי שתזכורות ומשימות חדשות יקפצו גם כשהאפליקציה סגורה. אחרי התקנה מחדש צריך להפעיל שוב."}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginInlineStart: "auto" }}>
+        <button onClick={onOpen} style={{ ...primaryBtn, height: 38, padding: "0 16px", fontSize: 13 }}>
+          {Ic.bell(14)} {denied ? "איך מתקנים" : "הפעלה"}
+        </button>
+        <button aria-label="לא עכשיו" title="לא עכשיו" onClick={() => {
+          try { localStorage.setItem(nudgeKey(journalId), String(Date.now())); } catch { /* מצב פרטי */ }
+          setHiddenNow(true);
+        }} style={{
+          width: 34, height: 34, borderRadius: 99, border: "none", background: "transparent", color: T.ink3, cursor: "pointer",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+        }}>{Ic.x(14)}</button>
+      </div>
+    </section>
   );
 }
 

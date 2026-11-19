@@ -166,6 +166,7 @@ export const Ic = {
   calendar: (s?: number) => <I size={s}><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /></I>,
   grid: (s?: number) => <I size={s}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></I>,
   week: (s?: number) => <I size={s}><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18M9 10v11M15 10v11" /></I>,
+  rows: (s?: number) => <I size={s}><rect x="3" y="4" width="18" height="5" rx="1.6" /><rect x="3" y="11.5" width="18" height="5" rx="1.6" /><path d="M7 21h10" /></I>,
   table: (s?: number) => <I size={s}><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M3 9.5h18M3 15h18M10 4v16" /></I>,
   board: (s?: number) => <I size={s}><rect x="3" y="4" width="5.4" height="16" rx="1.5" /><rect x="9.8" y="4" width="5.4" height="11" rx="1.5" /><rect x="16.6" y="4" width="5.4" height="7" rx="1.5" /></I>,
   chart: (s?: number) => <I size={s}><path d="M4 20V10M10 20V4M16 20v-7M21 20H3" /></I>,

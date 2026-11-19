@@ -316,6 +316,19 @@ export function TaskModal({ root, focusId, categories, onSave, onDelete, onAddCa
                     מהיומן של {firstName(owner.name)}
                   </span>
                 )}
+                {/* כולם בבת אחת — כשיש יותר משותף אפשרי אחד */}
+                {canEditShare && shareCandidates.length >= 2 && (() => {
+                  const all = shareCandidates.every((p) => sharedIds.includes(p.id));
+                  return (
+                    <button type="button" aria-pressed={all} onClick={() => {
+                      setDraft((d) => ({ ...d, sharedWith: all ? undefined : shareCandidates.map((p) => p.id) }));
+                      setDirty(true);
+                    }} style={{ ...chip("var(--tj-accent)", all), padding: "5px 13px" }}>
+                      {Ic.users(13)} {all ? "משותפת עם כולם" : "שיתוף עם כולם"}
+                      {all && <span style={{ display: "inline-flex" }}>{Ic.check(12)}</span>}
+                    </button>
+                  );
+                })()}
                 {shareCandidates.filter((p) => canEditShare || sharedIds.includes(p.id)).map((p) => {
                   const active = sharedIds.includes(p.id);
                   const me = p.id === share.journalId;

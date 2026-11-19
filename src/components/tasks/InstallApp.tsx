@@ -25,14 +25,15 @@ function useCanPrompt(): boolean {
 
 // אפשר להציע התקנה? לא כשהיומן כבר רץ כאפליקציה, ולא כשהוא כבר מותקן במכשיר.
 // offer=true גם אחרי "לא עכשיו" על הבאנר — כפתור ההתקנה הקבוע לא נעלם אף פעם.
-export function useInstallOffer(): { offer: boolean; canPrompt: boolean; env: InstallEnv | null } {
+export function useInstallOffer(): { offer: boolean; installed: boolean; canPrompt: boolean; env: InstallEnv | null } {
   const env = useInstallEnv();
   const canPrompt = useCanPrompt();
   const installed = useSyncExternalStore(subscribeInstall, isAppInstalled, () => false);
   useEffect(() => { detectInstalledApp(); }, []);
-  // במחשב מציעים רק כשהדפדפן באמת מאפשר התקנה; בטלפון תמיד (באייפון זה דרך "הוספה למסך הבית")
-  const offer = !!env && !env.standalone && !installed && (env.mobile || canPrompt);
-  return { offer, canPrompt, env };
+  // כפתור ההתקנה מופיע בכל דפדפן — בטלפון ובמחשב — כל עוד לא נמצאים בתוך האפליקציה המותקנת.
+  // (עד 19.11 במחשב הוא הופיע רק כשכרום הציע התקנה בלחיצה אחת, ולכן "לא היה כפתור".)
+  const offer = !!env && !env.standalone;
+  return { offer, installed, canPrompt, env };
 }
 
 // התקנה בלחיצה אחת כשהדפדפן מאפשר; אחרת — גיליון ההוראות
@@ -48,9 +49,21 @@ export function useInstallAction(onOpenSheet: () => void): () => Promise<void> {
 
 // ---------- כפתור התקנה קבוע (בכותרת) — לא תלוי בבאנר ----------
 export function InstallButton({ onOpen }: { onOpen: () => void }) {
-  const { offer } = useInstallOffer();
+  const { offer, installed } = useInstallOffer();
   const install = useInstallAction(onOpen);
   if (!offer) return null;
+  if (installed) {
+    // כבר מותקנת במכשיר — הכפתור נשאר, ומסביר איך פותחים / מתקינים מחדש
+    return (
+      <button onClick={onOpen} className="tj-installbtn" aria-label="האפליקציה מותקנת — פרטים" title="האפליקציה מותקנת במכשיר הזה" style={{
+        display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 99,
+        border: `1px solid ${alpha(T.mint, 40)}`, background: T.mintSoft, color: T.mint, cursor: "pointer",
+        fontFamily: "inherit", fontSize: 12, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap",
+      }}>
+        {Ic.checkCircle(14)} <span className="tj-installbtn-text">מותקנת</span>
+      </button>
+    );
+  }
   return (
     <button onClick={install} className="tj-installbtn" aria-label="התקנת היומן כאפליקציה" title="התקנת היומן כאפליקציה" style={{
       display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 99,
@@ -83,10 +96,10 @@ async function copyLink(toast: (m: string, t?: "success" | "error") => void) {
 
 // ---------- באנר בראש הדשבורד (רק בטלפון / כשאפשר להתקין, ולא אם כבר מותקן) ----------
 export function InstallBanner({ journalId, onOpen }: { journalId: string; onOpen: () => void }) {
-  const { offer, canPrompt, env } = useInstallOffer();
+  const { offer, installed, canPrompt, env } = useInstallOffer();
   const hidden = useSyncExternalStore(subscribeInstallHidden, () => isInstallHidden(journalId), () => true);
   const install = useInstallAction(onOpen);
-  if (!offer || !env || hidden) return null;
+  if (!offer || installed || !env || hidden) return null;
 
   const href = env.inApp ? openInBrowserHref(env, window.location.href) : null;
 
@@ -132,7 +145,11 @@ export function InstallSheet({ personName, onClose }: { personName: string; onCl
   const env = useInstallEnv();
   const canPrompt = useCanPrompt();
   const { toast } = useToast();
-  const [os, setOs] = useState<"ios" | "android">(() => (installEnv()?.os === "ios" ? "ios" : "android"));
+  const [os, setOs] = useState<"ios" | "android" | "desktop">(() => {
+    const e = installEnv();
+    return e?.os === "ios" ? "ios" : e?.os === "android" ? "android" : e && !e.mobile ? "desktop" : "android";
+  });
+  const installed = useSyncExternalStore(subscribeInstall, isAppInstalled, () => false);
   const href = env?.inApp ? openInBrowserHref(env, window.location.href) : null;
 
   async function install() {
@@ -155,6 +172,14 @@ export function InstallSheet({ personName, onClose }: { personName: string; onCl
         <Box tone="mint">{Ic.checkCircle(15)} היומן כבר פתוח כאפליקציה במכשיר הזה.</Box>
       ) : (
         <>
+          {installed && (
+            <div style={{ marginBottom: 14 }}>
+              <Box tone="mint">
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>{Ic.checkCircle(14)} האפליקציה כבר מותקנת במכשיר הזה.</div>
+                פותחים אותה מהאייקון {os === "desktop" ? "בשולחן העבודה / בתפריט האפליקציות" : "במסך הבית"}. כדי להתקין מחדש (למשל בשביל האייקון החדש) — מסירים אותה קודם, ואז מתקינים לפי השלבים כאן.
+              </Box>
+            </div>
+          )}
           {canPrompt && (
             <button onClick={install} style={{ ...primaryBtn, width: "100%", height: 48, fontSize: 15, marginBottom: 14, borderRadius: 16 }}>
               {Ic.download(16)} התקנה בלחיצה אחת
@@ -176,17 +201,17 @@ export function InstallSheet({ personName, onClose }: { personName: string; onCl
             </Box>
           )}
 
-          <div role="group" aria-label="סוג הטלפון" style={{
-            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: 4, borderRadius: 14,
+          <div role="group" aria-label="סוג המכשיר" style={{
+            display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, padding: 4, borderRadius: 14,
             background: T.surface2, margin: "14px 0 14px",
           }}>
-            {(["ios", "android"] as const).map((k) => (
+            {(["ios", "android", "desktop"] as const).map((k) => (
               <button key={k} onClick={() => setOs(k)} aria-pressed={os === k} style={{
                 height: 36, borderRadius: 11, border: "none", cursor: "pointer", fontFamily: "inherit",
                 fontSize: 13, fontWeight: 700,
                 background: os === k ? T.surface : "transparent", color: os === k ? T.ink : T.ink3,
                 boxShadow: os === k ? T.shadowSm : "none",
-              }}>{k === "ios" ? "אייפון" : "אנדרואיד"}</button>
+              }}>{k === "ios" ? "אייפון" : k === "android" ? "אנדרואיד" : "מחשב"}</button>
             ))}
           </div>
 
@@ -202,7 +227,7 @@ export function InstallSheet({ personName, onClose }: { personName: string; onCl
 }
 
 // ---------- השלבים עצמם (גם בתוך מרכז ההתראות) ----------
-export function InstallSteps({ os }: { os: "ios" | "android" }) {
+export function InstallSteps({ os }: { os: "ios" | "android" | "desktop" }) {
   const step = (n: number, body: React.ReactNode) => (
     <li key={n} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
       <span className="num" style={{
@@ -236,6 +261,12 @@ export function InstallSteps({ os }: { os: "ios" | "android" }) {
         <>משאירים את ״פתיחה כאפליקציית רשת״ דלוק (אם מופיע) ולוחצים <b>״הוסף״</b>.</>,
         <>פותחים את היומן <b>מהאייקון החדש</b> במסך הבית.</>,
       ]
+    : os === "desktop"
+    ? [
+        <>פותחים את הקישור ב-<b>Chrome</b> או ב-<b>Edge</b>.</>,
+        <>בשורת הכתובת, בצד, יש סמל התקנה {glyph(Ic.download(12))} — לוחצים עליו. אם אין: {glyph("⋮")} ← <b>״העברה, שמירה ושיתוף״</b> ← <b>״התקנת הדף כאפליקציה״</b> (ב-Edge: {glyph("⋯")} ← ״אפליקציות״ ← ״התקנת אתר זה כאפליקציה״).</>,
+        <>לוחצים <b>״התקנה״</b> — האפליקציה נפתחת בחלון משלה, ומופיעה בתפריט ההתחלה / בשולחן העבודה.</>,
+      ]
     : [
         <>פותחים את הקישור ב-<b>Chrome</b>.</>,
         <>לוחצים על {glyph("⋮")} (שלוש נקודות) בפינה העליונה.</>,
@@ -250,6 +281,8 @@ export function InstallSteps({ os }: { os: "ios" | "android" }) {
       <p style={{ margin: "10px 0 0", fontSize: 11.5, color: T.ink3, lineHeight: 1.6 }}>
         {os === "ios"
           ? "נדרש iOS 16.4 ומעלה. לא רואים ״הוספה למסך הבית״? כנראה שהקישור פתוח בתוך וואטסאפ — פותחים אותו קודם ב-Safari."
+          : os === "desktop"
+          ? "ב-Safari במק: תפריט ״קובץ״ ← ״הוספה ל-Dock״."
           : "בדפדפן של סמסונג: ☰ למטה ← ״הוספת דף אל״ ← ״מסך הבית״."}
       </p>
     </div>

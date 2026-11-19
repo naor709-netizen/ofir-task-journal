@@ -169,6 +169,12 @@ V5 = "אבולוציה נועזת": אותה זהות (לבן + כחול ההס�
 - חוקים: transform/opacity/filter/clip-path בלבד; `clearProps` ממוקד (לעולם לא "all");
   עקומות `--ease-out` = cubic-bezier(0.22,1,0.36,1), `--ease-soft` = (0.32,0.72,0,1)
 
+### מצב חסכוני בטלפון
+
+`@media (max-width: 760px), (pointer: coarse)`: אורורה סטטית בלי `filter: blur`, בלי גרעון, כותרת/סרגל
+תחתון/סרגל עליון אטומים (`backdrop-filter: none`), בלי זכוכית בתוך ה-hero, והשמש/כוכבים לא "נושמים".
+אותה זהות — רק בלי חישוב טשטוש בכל פריים.
+
 ## 8. עומק וטקסטורה
 
 **Double-Bezel** — כל `card`: `inset 0 1px 0 var(--tj-bezel)` + `0 1px 2px var(--tj-shadow)`

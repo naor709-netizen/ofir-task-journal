@@ -331,6 +331,22 @@ html[data-intro="skip"] .tj-intro, .tj-intro[data-phase="gone"] { display: none;
   .tj-intro-check { animation: none; stroke-dashoffset: 0; }
 }
 
+/* ---- טלפון / מסך מגע: מצב חסכוני ----
+   שכבות טשטוש חיות (אורורה נעה + זכוכית על כותרת/סרגל קבועים) מכריחות את הטלפון לחשב טשטוש
+   מחדש בכל פריים — זה מה שגורם לגלילה ולחיצות להרגיש איטיות. בטלפון: הרקע נשאר אותו רקע
+   אבל סטטי ובלי פילטר, והכותרת והסרגל התחתון אטומים. בלי שינוי במחשב. */
+@media (max-width: 760px), (pointer: coarse) {
+  .tj-aurora i { animation: none !important; filter: none !important; will-change: auto !important; opacity: 0.6; }
+  body::after { display: none; }
+  .tj-header, .tj-bottomnav, .tj-toolbar {
+    backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+    background: var(--tj-surface) !important;
+  }
+  .tj-scrim { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .tj-orb, .tj-stars { animation: none !important; }
+  .tj-hero [style*="backdrop-filter"] { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tj-aurora i, .tj-live::after, .tj-skel { animation: none !important; }
   .tj-tilt { transform: none !important; }

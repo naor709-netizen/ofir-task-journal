@@ -26,12 +26,13 @@ import { TaskModal } from "./TaskModal";
 import { WeekView, TableView, BoardView, StatsView } from "./views";
 import { NotifyCenter } from "./NotifyCenter";
 import { InstallBanner, InstallSheet, InstallButton, useInstallOffer, useInstallAction } from "./InstallApp";
+import { SummaryBoard } from "./SummaryBoard";
 import { TeamView, TeamStrip } from "./TeamView";
 import { Donut, Legend, DayBars, DayBarsLegend } from "./charts";
 
 gsap.registerPlugin(useGSAP);
 
-type ViewKey = "dashboard" | "shared" | "team" | "week" | "table" | "board" | "stats";
+type ViewKey = "dashboard" | "summary" | "shared" | "team" | "week" | "table" | "board" | "stats";
 
 const BASE_VIEWS: { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode }[] = [
   { key: "dashboard", label: "דשבורד", icon: Ic.grid },
@@ -100,14 +101,16 @@ export default function TaskJournal({ journalId, personName, personColor }: {
 
   // "משותפות" — טאב קבוע מיד אחרי הדשבורד, אצל כולם
   const VIEWS = useMemo(() => {
+    const summary = { key: "summary" as ViewKey, label: "בורד", icon: Ic.rows };
     const shared = { key: "shared" as ViewKey, label: "משותפות", icon: Ic.share };
     const team = { key: "team" as ViewKey, label: "הצוות", icon: Ic.users };
     return isManager
-      ? [BASE_VIEWS[0], shared, team, ...BASE_VIEWS.slice(1)]
-      : [BASE_VIEWS[0], shared, ...BASE_VIEWS.slice(1)];
+      ? [BASE_VIEWS[0], summary, shared, team, ...BASE_VIEWS.slice(1)]
+      : [BASE_VIEWS[0], summary, shared, ...BASE_VIEWS.slice(1)];
   }, [isManager]);
   // בטלפון: שלושה יעדים בסרגל התחתון (+ "משימה חדשה" במרכז), והשאר תחת "עוד"
-  const barKeys: ViewKey[] = isManager ? ["dashboard", "shared", "team"] : ["dashboard", "shared", "week"];
+  // הבורד בסרגל אצל כולם; "הצוות" (ניהול) עובר ל"עוד" אצל המנהל
+  const barKeys: ViewKey[] = ["dashboard", "summary", "shared"];
   // קישורים מהתראות: /?view=team (היומן לא מצויר בשרת — אין חשש לאי-התאמה)
   const [view, setView] = useState<ViewKey>(() => {
     if (typeof window === "undefined") return "dashboard";
@@ -576,6 +579,7 @@ export default function TaskJournal({ journalId, personName, personColor }: {
   };
 
   const isTeam = view === "team";
+  const isWide = isTeam || view === "summary"; // עמודים ברוחב מלא, בלי סרגל הסינון
 
   return (
     <div ref={rootRef} style={{ minHeight: "100vh", color: T.ink }}>
@@ -629,15 +633,31 @@ export default function TaskJournal({ journalId, personName, personColor }: {
         </div>
       </div>
 
-      {isTeam ? (
+      {isWide ? (
         <div className="tj-layout" style={{ maxWidth: 1280, margin: "0 auto", padding: "16px 18px 60px" }}>
           <main className="tj-main" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <TeamView
-              todayKey={todayKey}
-              onOpenOwnTask={(id) => setOpenTaskId(id)}
-              onOpenNotify={() => setNotifyOpen(true)}
-              focusMember={teamFocus}
-            />
+            {isTeam ? (
+              <TeamView
+                todayKey={todayKey}
+                onOpenOwnTask={(id) => setOpenTaskId(id)}
+                onOpenNotify={() => setNotifyOpen(true)}
+                focusMember={teamFocus}
+              />
+            ) : (
+              <SummaryBoard
+                journalId={journalId}
+                isManager={isManager}
+                people={people}
+                myTasks={journal.tasks}
+                myCats={catById}
+                todayKey={todayKey}
+                labelOf={sharedLabelOf}
+                onOpenOwn={(id) => setOpenTaskId(id)}
+                onSetOwnStatus={setTaskStatus}
+                onCreate={() => createTask()}
+                onCreateShared={createShared}
+              />
+            )}
           </main>
         </div>
       ) : (
@@ -1898,7 +1918,7 @@ function NavBtn({ children, onClick, label }: { children: React.ReactNode; onCli
 type ViewDef = { key: ViewKey; label: string; icon: (s?: number) => React.ReactNode };
 
 const VIEW_PAL: Record<ViewKey, Pal> = {
-  dashboard: "blue", shared: "pink", team: "purple", week: "sky", table: "lavender", board: "cream", stats: "lime",
+  dashboard: "blue", summary: "plum", shared: "pink", team: "purple", week: "sky", table: "lavender", board: "cream", stats: "lime",
 };
 
 function BottomNav({ views, barKeys, view, onChange, onAdd, onMore, badges }: {

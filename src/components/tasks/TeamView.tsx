@@ -25,7 +25,7 @@ import {
 } from "./ui";
 import { TaskModal } from "./TaskModal";
 
-type Person = { id: string; name: string; color: PersonColor; role?: string; isManager: boolean };
+export type Person = { id: string; name: string; color: PersonColor; role?: string; isManager: boolean };
 
 type PhoneChannel = "telegram" | "push" | "sms";
 const CHANNEL_LABEL: Record<PhoneChannel, string> = { telegram: "טלגרם", push: "התראות פעילות", sms: "SMS" };
@@ -1297,7 +1297,7 @@ function EditMemberDialog({ member, onClose, onShare, onRemove }: { member: Team
   );
 }
 
-function AssignDialog({ people, initial, todayKey, onClose, onAssigned }: {
+export function AssignDialog({ people, initial, todayKey, onClose, onAssigned }: {
   people: Person[];
   initial: string | null;
   todayKey: string;
@@ -1310,6 +1310,7 @@ function AssignDialog({ people, initial, todayKey, onClose, onAssigned }: {
   const [due, setDue] = useState(todayKey);
   const [critical, setCritical] = useState(false);
   const [status, setStatus] = useState<TaskStatus>("todo");
+  const [shared, setShared] = useState(false); // משותפת: מופיעה גם ביומן של אופיר
   const [busy, setBusy] = useState(false);
   const parsed = text.trim() ? parseQuickAdd(text) : null;
 
@@ -1334,6 +1335,7 @@ function AssignDialog({ people, initial, todayKey, onClose, onAssigned }: {
         dueDate: due || null,
         critical,
         status,
+        ...(shared ? { sharedWith: [MANAGER_ID] } : {}),
         reminders: parsed.reminder ? [{ id: crypto.randomUUID?.() ?? String(Date.now()), datetime: parsed.reminder, note: "", fired: false }] : [],
       });
       onAssigned(person, t);
@@ -1391,6 +1393,12 @@ function AssignDialog({ people, initial, todayKey, onClose, onAssigned }: {
         <Toggle on={critical} onChange={setCritical} label="קריטית" />
         <span style={{ color: critical ? T.danger : T.ink2, fontWeight: critical ? 700 : 500, display: "inline-flex", alignItems: "center", gap: 5 }}>
           {Ic.flame(13)} משימה קריטית
+        </span>
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, fontSize: 13, cursor: "pointer" }}>
+        <Toggle on={shared} onChange={setShared} label="משימה משותפת" />
+        <span style={{ color: shared ? T.accent : T.ink2, fontWeight: shared ? 700 : 500, display: "inline-flex", alignItems: "center", gap: 5 }}>
+          {Ic.users(13)} משותפת — תופיע גם ביומן שלי, ושנינו נוכל לעדכן
         </span>
       </label>
       <button onClick={send} disabled={!person || !parsed?.title || busy} style={{

@@ -5,6 +5,7 @@
 // localStorage cache + Supabase cloud sync (optional)
 // ============================================
 
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { MANAGER_ID, metaKey, journalOfPayload, rowPayload, payloadVisibleIn, sharedWithOfPayload } from "./journals";
 
 export type TaskNature = "personal" | "urgent" | "routine";
@@ -352,17 +353,90 @@ export function setActiveJournal(id: string) {
   pushTimer = null;
   remote = false;
   syncStarted = false;
+  if (initRetryTimer) clearTimeout(initRetryTimer);
+  initRetryTimer = null;
+  if (applyTimer) clearTimeout(applyTimer);
+  applyTimer = null;
+  remoteChanges.clear();
+  pushRetries = 0;
   try { channel?.unsubscribe(); } catch { /* ignore */ }
   channel = null;
   syncState = "local";
   syncListeners.forEach((l) => l());
 }
 
+// --- שינויים שעוד לא הגיעו לענן — נשמרים גם בדפדפן ---
+// בלי זה, שינוי שנעשה כשהענן לא זמין (אין רשת, Supabase חסום) נשמר רק בעותק
+// המקומי, ובחיבור הבא העותק מהענן דורס אותו. הרשימה נשמרת ב-localStorage כדי
+// לשרוד רענון וסגירה, ומשותפת לכל הלשוניות של אותו יומן.
+
+type Pending = { dirty: string[]; deleted: string[]; left: Task[]; cats: boolean };
+
+function pendingKey(journal: string): string {
+  return `${storageKeyFor(journal)}:pending`;
+}
+
+function readPending(journal: string = activeJournal): Pending {
+  const empty: Pending = { dirty: [], deleted: [], left: [], cats: false };
+  if (typeof window === "undefined") return empty;
+  try {
+    const raw = localStorage.getItem(pendingKey(journal));
+    if (!raw) return empty;
+    const p = JSON.parse(raw) as Partial<Pending>;
+    return {
+      dirty: Array.isArray(p.dirty) ? p.dirty : [],
+      deleted: Array.isArray(p.deleted) ? p.deleted : [],
+      left: Array.isArray(p.left) ? p.left : [],
+      cats: !!p.cats,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function writePending(journal: string, p: Pending) {
+  try {
+    if (!p.dirty.length && !p.deleted.length && !p.left.length && !p.cats) localStorage.removeItem(pendingKey(journal));
+    else localStorage.setItem(pendingKey(journal), JSON.stringify(p));
+  } catch { /* מצב פרטי / אחסון מלא */ }
+}
+
+// מוסיף לרשימה השמורה את מה שממתין עכשיו בזיכרון
+function persistPending() {
+  const p = readPending();
+  const dirty = new Set([...p.dirty, ...dirtyRoots]);
+  const deleted = new Set([...p.deleted, ...deletedRoots]);
+  const left = new Map(p.left.map((t) => [t.id, t]));
+  leftRoots.forEach((t, id) => left.set(id, t));
+  dirtyRoots.forEach((id) => { deleted.delete(id); left.delete(id); });
+  deletedRoots.forEach((id) => dirty.delete(id));
+  leftRoots.forEach((_, id) => dirty.delete(id));
+  writePending(activeJournal, { dirty: [...dirty], deleted: [...deleted], left: [...left.values()], cats: p.cats || catsDirty });
+}
+
+// מסיר מהרשימה השמורה את מה שנשמר בענן — חוץ ממה שהשתנה שוב בינתיים
+function clearPersisted(journal: string, done: { dirty: string[]; deleted: string[]; left: string[]; cats: boolean }) {
+  const p = readPending(journal);
+  const active = journal === activeJournal;
+  const drop = (ids: string[]) =>
+    new Set(ids.filter((id) => !active || (!dirtyRoots.has(id) && !deletedRoots.has(id) && !leftRoots.has(id))));
+  const dDirty = drop(done.dirty);
+  const dDeleted = drop(done.deleted);
+  const dLeft = drop(done.left);
+  writePending(journal, {
+    dirty: p.dirty.filter((id) => !dDirty.has(id)),
+    deleted: p.deleted.filter((id) => !dDeleted.has(id)),
+    left: p.left.filter((t) => !dLeft.has(t.id)),
+    cats: p.cats && !(done.cats && !(active && catsDirty)),
+  });
+}
+
 export function setJournalData(next: JournalData): boolean {
   const prev = snapshot;
   snapshot = next;
   const ok = saveJournal(next);
-  if (remote && prev) {
+  // השינויים נרשמים תמיד — גם כשאין חיבור לענן — כדי שיגיעו אליו כשהחיבור יחזור
+  if (prev) {
     const prevMap = new Map(prev.tasks.map((t) => [t.id, t]));
     const nextIds = new Set(next.tasks.map((t) => t.id));
     for (const t of next.tasks) {
@@ -379,8 +453,11 @@ export function setJournalData(next: JournalData): boolean {
       }
     }
     if (JSON.stringify(prev.categories) !== JSON.stringify(next.categories)) catsDirty = true;
-    if (pushTimer) clearTimeout(pushTimer);
-    pushTimer = setTimeout(flushPush, 500);
+    persistPending();
+    if (remote) {
+      if (pushTimer) clearTimeout(pushTimer);
+      pushTimer = setTimeout(flushPush, 500);
+    }
   }
   notify();
   return ok;
@@ -443,11 +520,18 @@ async function flushPush() {
   ];
   const dels = [...deletedRoots];
   const cats = catsDirty ? snap.categories : null;
+  // מה שנשלח עכשיו — לשחזור אם השליחה נכשלת, ולניקוי מהרשימה השמורה אם הצליחה
+  const sentDirty = [...dirtyRoots];
+  const sentLeft = new Map(leftRoots);
+  const sentCats = catsDirty;
   dirtyRoots.clear();
   deletedRoots.clear();
   leftRoots.clear();
   catsDirty = false;
-  if (!upserts.length && !dels.length && !cats) return;
+  if (!upserts.length && !dels.length && !cats) {
+    clearPersisted(journal, { dirty: sentDirty, deleted: dels, left: [...sentLeft.keys()], cats: sentCats });
+    return;
+  }
   setSyncState("syncing");
   try {
     const { supabase } = await import("./supabase");
@@ -469,16 +553,41 @@ async function flushPush() {
         .upsert({ key: metaKey("categories", journal), payload: cats, updated_at: new Date().toISOString() });
       if (error) throw error;
     }
-    if (journal === activeJournal) setSyncState("synced");
+    clearPersisted(journal, { dirty: sentDirty, deleted: dels, left: [...sentLeft.keys()], cats: sentCats });
+    if (journal !== activeJournal) return;
+    pushRetries = 0;
+    setSyncState("synced");
   } catch (e) {
     syncDetail = e instanceof Error ? e.message : JSON.stringify(e);
+    if (journal !== activeJournal) return;
+    // השליחה נכשלה: הכול חוזר לרשימת ההמתנה (חוץ ממה שהשתנה שוב בינתיים), וננסה שוב
+    for (const id of sentDirty) if (!deletedRoots.has(id) && !leftRoots.has(id)) dirtyRoots.add(id);
+    for (const id of dels) if (!dirtyRoots.has(id)) deletedRoots.add(id);
+    sentLeft.forEach((t, id) => { if (!dirtyRoots.has(id)) leftRoots.set(id, t); });
+    if (sentCats) catsDirty = true;
+    persistPending();
     setSyncState("error");
+    schedulePushRetry();
   }
+}
+
+// ניסיון חוזר אחרי כשל, בהמתנה הולכת וגדלה (30 שניות עד 10 דקות)
+let pushRetries = 0;
+function schedulePushRetry() {
+  const delay = Math.min(30_000 * 2 ** pushRetries, 600_000);
+  pushRetries++;
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(flushPush, delay);
 }
 
 // --- initial load + realtime pull ---
 
 let syncStarted = false;
+let initRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function hasPending(): boolean {
+  return dirtyRoots.size > 0 || deletedRoots.size > 0 || leftRoots.size > 0 || catsDirty;
+}
 
 export async function initJournalSync() {
   if (syncStarted || typeof window === "undefined") return;
@@ -493,6 +602,8 @@ export async function initJournalSync() {
     const cloud = await fetchCloud(journal);
     if (journal !== activeJournal) return; // היומן הוחלף בזמן הטעינה
     remote = true;
+    if (initRetryTimer) clearTimeout(initRetryTimer);
+    initRetryTimer = null;
     const local = getJournalSnapshot() ?? loadJournal();
     // "ריק" = אין בענן שום שורה של היומן הזה עצמו. משימות ששותפו איתו מיומן אחר
     // לא נחשבות — אחרת המשימות המקומיות של מכשיר ראשון היו נדרסות ונעלמות.
@@ -505,33 +616,84 @@ export async function initJournalSync() {
       // מכשיר ראשון שמתחבר: מעלה את הנתונים המקומיים לענן, ומצרף את המשימות ששותפו איתו
       const shared = cloud.tasks.filter((t) => t.ownerId && !localOwn.some((x) => x.id === t.id));
       snapshot = { categories: local.categories, tasks: [...localOwn, ...shared] };
-      saveJournal(snapshot);
       localOwn.forEach((t) => dirtyRoots.add(t.id));
       catsDirty = true;
-      flushPush();
     } else {
-      snapshot = {
-        categories: cloud.categories ?? DEFAULT_CATEGORIES,
-        tasks: cloud.tasks,
-      };
-      saveJournal(snapshot);
+      // הענן קובע — חוץ משינויים מקומיים שעוד לא הגיעו אליו, שגוברים עליו ונשלחים
+      snapshot = mergeLocalChanges(journal, local, cloud);
     }
+    saveJournal(snapshot);
     setSyncState("synced");
     notify();
+    if (hasPending()) {
+      persistPending();
+      flushPush();
+    }
 
+    let subscribedOnce = false;
     channel = supabase
       .channel(`journal-sync-${journal}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "journal_tasks" }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "journal_meta" }, scheduleRefetch)
-      .subscribe();
+      // שינוי בשורה: מעדכנים רק אותה, מתוך האירוע עצמו — בלי למשוך מחדש את כל היומן
+      .on("postgres_changes", { event: "*", schema: "public", table: "journal_tasks" }, onTaskChange)
+      // רק הקטגוריות של היומן הזה. שאר journal_meta (טלגרם, צוות, אינדקס התזכורות) לא נוגע בתצוגה
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "journal_meta", filter: `key=eq.${metaKey("categories", journal)}`,
+      }, scheduleRefetch)
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") return;
+        // התחברות מחדש אחרי ניתוק (טלפון שנרדם, רשת שנפלה): ייתכן שהוחמצו שינויים בינתיים
+        if (subscribedOnce) scheduleRefetch();
+        subscribedOnce = true;
+      });
   } catch (e) {
     remote = false;
     syncDetail = e instanceof Error ? e.message : JSON.stringify(e);
     setSyncState("local");
+    // הענן לא זמין: ממשיכים מקומית, ומנסים שוב בעוד שתי דקות (או כשהיומן חוזר למסך)
+    if (journal === activeJournal) {
+      syncStarted = false;
+      if (initRetryTimer) clearTimeout(initRetryTimer);
+      initRetryTimer = setTimeout(() => { initRetryTimer = null; initJournalSync(); }, 120_000);
+    }
   }
 }
 
-type Row = { id: string; payload: LegacyTask & { journalId?: string } };
+// חזרה למסך / חזרת רשת: ניסיון התחברות מיידי, שליחת שינויים שממתינים,
+// ואחרי היעדרות ארוכה — משיכה אחת של היומן, למקרה שאירועים הוחמצו
+if (typeof window !== "undefined") {
+  let hiddenAt = 0;
+  const wake = () => {
+    if (document.visibilityState !== "visible") return;
+    if (!remote) {
+      if (initRetryTimer) {
+        clearTimeout(initRetryTimer);
+        initRetryTimer = null;
+        initJournalSync();
+      }
+      return;
+    }
+    if (hasPending()) {
+      if (pushTimer) clearTimeout(pushTimer);
+      pushTimer = setTimeout(flushPush, 0);
+    }
+    if (hiddenAt && Date.now() - hiddenAt > 10 * 60_000) scheduleRefetch();
+    hiddenAt = 0;
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") hiddenAt = Date.now();
+    else wake();
+  });
+  window.addEventListener("online", wake);
+}
+
+type RowPayload = LegacyTask & { journalId?: string };
+type Row = { id: string; payload: RowPayload; updated_at?: string };
+
+// משימה ששותפה איתי ועוד אין לה שם — היוצר עדיין מקליד; לא מציגים "ללא שם" אצל השותף
+function rowVisible(payload: RowPayload | null | undefined, journal: string): payload is RowPayload {
+  return !!payload && payloadVisibleIn(payload, journal) &&
+    (journalOfPayload(payload) === journal || !!String(payload.title ?? "").trim());
+}
 
 // שורות של יומן אחד: שלו, ועוד משימות ששותפו איתו מיומן אחר.
 // משימות ישנות (בלי journalId) שייכות לאופיר.
@@ -541,21 +703,27 @@ export async function fetchJournalRows(journal: string): Promise<Row[]> {
   const mine = journal === MANAGER_ID
     ? `payload->>journalId.is.null,payload->>journalId.eq.${MANAGER_ID}`
     : `payload->>journalId.eq.${journal}`;
-  let { data, error } = await supabase.from("journal_tasks").select("id,payload")
+  let { data, error } = await supabase.from("journal_tasks").select("id,payload,updated_at")
     .or(`${mine},payload->>sharedWith.not.is.null`);
   if (error) {
     // רשת ביטחון: אם השרת דוחה את סינון ה-JSON — מושכים הכל ומסננים כאן,
     // כדי שהיומן לעולם לא ייפול ל"מקומי בלבד" בגלל תחביר
-    ({ data, error } = await supabase.from("journal_tasks").select("id,payload"));
+    ({ data, error } = await supabase.from("journal_tasks").select("id,payload,updated_at"));
     if (error) throw error;
   }
   // הגנה כפולה: גם אם הסינון בשרת לא הופעל, לא מערבבים יומנים
-  // משימה ששותפה איתי ועוד אין לה שם — היוצר עדיין מקליד; לא מציגים "ללא שם" אצל השותף
-  return ((data ?? []) as Row[]).filter((r) => r.payload && payloadVisibleIn(r.payload, journal) &&
-    (journalOfPayload(r.payload) === journal || !!String(r.payload.title ?? "").trim()));
+  return ((data ?? []) as Row[]).filter((r) => rowVisible(r.payload, journal));
 }
 
-async function fetchCloud(journal: string): Promise<{ categories: TaskCategory[] | null; tasks: Task[] }> {
+type CloudData = {
+  categories: TaskCategory[] | null;
+  tasks: Task[];
+  stamps: Map<string, string>; // מתי כל שורה נכתבה לענן לאחרונה
+};
+
+const byCreatedDesc = (a: Task, b: Task) => b.createdAt.localeCompare(a.createdAt);
+
+async function fetchCloud(journal: string): Promise<CloudData> {
   const { supabase } = await import("./supabase");
   // שתי הבקשות כהבטחות — כשל סינכרוני באחת לא משאיר את השנייה כדחייה לא מטופלת
   const [rows, metaRes] = await Promise.all([
@@ -565,13 +733,166 @@ async function fetchCloud(journal: string): Promise<{ categories: TaskCategory[]
   if (metaRes.error) throw metaRes.error;
   const catsRow = (metaRes.data ?? [])[0] as { payload: TaskCategory[] } | undefined;
   const catIds = new Set((catsRow?.payload ?? DEFAULT_CATEGORIES).map((c) => c.id));
-  const tasks = rows
-    .map((r) => taskFromRow(r.payload, journal, catIds))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const tasks = rows.map((r) => taskFromRow(r.payload, journal, catIds)).sort(byCreatedDesc);
+  const stamps = new Map<string, string>();
+  rows.forEach((r) => { if (r.updated_at) stamps.set(r.id, r.updated_at); });
   return {
     categories: catsRow ? catsRow.payload.map((c) => ({ parentId: null, ...c })) : null,
     tasks,
+    stamps,
   };
+}
+
+// --- מיזוג בחיבור: הענן, ועליו השינויים המקומיים שעוד לא הגיעו אליו ---
+
+function mergeLocalChanges(journal: string, local: JournalData, cloud: CloudData): JournalData {
+  const pending = readPending(journal);
+  const localById = new Map(local.tasks.map((t) => [t.id, t]));
+  const merged = new Map(cloud.tasks.map((t) => [t.id, t]));
+  for (const id of pending.dirty) {
+    const t = localById.get(id);
+    if (t) { merged.set(id, t); dirtyRoots.add(id); }
+  }
+  for (const id of pending.deleted) {
+    const c = merged.get(id);
+    if (c && !c.ownerId) { merged.delete(id); deletedRoots.add(id); }
+  }
+  for (const t of pending.left) {
+    if (merged.delete(t.id)) leftRoots.set(t.id, t);
+  }
+  let categories = cloud.categories ?? DEFAULT_CATEGORIES;
+  if (pending.cats) { categories = local.categories; catsDirty = true; }
+  for (const t of recoverOutageEdits(journal, local, cloud, pending)) {
+    merged.set(t.id, t);
+    dirtyRoots.add(t.id);
+  }
+  return { categories, tasks: [...merged.values()].sort(byCreatedDesc) };
+}
+
+// החסימה של Supabase בלילה שבין 24 ל-25.11.2026: מהבדיקה התקינה האחרונה ועד שהענן חזר,
+// אף מכשיר לא יכול היה לכתוב אליו — והשינויים מאותם ימים לא נרשמו ברשימת ההמתנה,
+// כי היא נוספה רק אחר כך.
+const OUTAGE_START = Date.parse("2026-11-24T20:17:00Z");
+
+// סדר מפתחות קבוע, כדי שהשוואה לא תיפול על סדר שדות
+function stableJson(v: unknown): string {
+  return JSON.stringify(v, (_k, val: unknown) =>
+    val && typeof val === "object" && !Array.isArray(val)
+      ? Object.fromEntries(Object.entries(val as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : val);
+}
+
+// פעם אחת לכל יומן בכל מכשיר: מזהה שינויים מתקופת החסימה ומחזיר אותם לענן.
+// 1. משימה שקיימת רק במכשיר ונוצרה אחרי תחילת החסימה — נוצרה בזמן החסימה. עולה.
+// 2. משימה שבמכשיר שונה מהענן, כשבענן היא לא נכתבה מאז תחילת החסימה — שונתה בזמן
+//    החסימה. עולה, אבל רק אם המכשיר היה מעודכן כשהחסימה התחילה (יש בו כל משימה שנוצרה
+//    לפני כן). במכשיר שלא נפתח זמן רב ההבדלים הם עדכונים שלא הגיעו אליו — שם הענן קובע.
+// העותקים המקומיים שהענן גובר עליהם נשמרים בגיבוי במכשיר, כדי ששום דבר לא יימחק לגמרי.
+function recoverOutageEdits(journal: string, local: JournalData, cloud: CloudData, pending: Pending): Task[] {
+  const flag = `${storageKeyFor(journal)}:outage-2026-11`;
+  try {
+    if (localStorage.getItem(flag)) return [];
+  } catch {
+    return [];
+  }
+  const out: Task[] = [];
+  const kept: Task[] = [];
+  const skip = new Set([...pending.dirty, ...pending.deleted, ...pending.left.map((t) => t.id)]);
+  const ms = (iso: string | undefined) => Date.parse(iso ?? "");
+  const cloudById = new Map(cloud.tasks.map((t) => [t.id, t]));
+  const localIds = new Set(local.tasks.map((t) => t.id));
+  const fresh = cloud.tasks.every((t) => t.ownerId || !(ms(t.createdAt) < OUTAGE_START) || localIds.has(t.id));
+  for (const t of local.tasks) {
+    if (skip.has(t.id)) continue;
+    const c = cloudById.get(t.id);
+    if (!c) {
+      if (t.ownerId) continue;
+      if (ms(t.createdAt) >= OUTAGE_START) out.push(t);
+      else kept.push(t);
+      continue;
+    }
+    if (stableJson(t) === stableJson(c)) continue;
+    if (fresh && ms(cloud.stamps.get(t.id)) < OUTAGE_START) out.push(t);
+    else kept.push(t);
+  }
+  try {
+    if (kept.length || out.length) {
+      localStorage.setItem(`${storageKeyFor(journal)}:outage-backup`, JSON.stringify({
+        at: new Date().toISOString(), fresh,
+        restored: out.map((t) => t.id),
+        localOnly: kept,
+        cloudBefore: out.map((t) => cloudById.get(t.id)).filter(Boolean),
+      }));
+    }
+  } catch { /* אחסון מלא — הגיבוי לא קריטי */ }
+  try { localStorage.setItem(flag, new Date().toISOString()); } catch { /* ignore */ }
+  return out;
+}
+
+// --- שינויים מהענן בזמן אמת ---
+
+type RemoteChange = { kind: "row"; row: Row } | { kind: "gone" } | { kind: "fetch" };
+const remoteChanges = new Map<string, RemoteChange>();
+let applyTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onTaskChange(p: RealtimePostgresChangesPayload<Row>) {
+  const id = (p.new as Partial<Row> | undefined)?.id ?? (p.old as Partial<Row> | undefined)?.id;
+  if (!id) { scheduleRefetch(); return; }
+  if (p.eventType === "DELETE") {
+    remoteChanges.set(id, { kind: "gone" });
+  } else {
+    const row = p.new as Partial<Row>;
+    // שורה גדולה מדי מגיעה בלי התוכן — מושכים רק אותה
+    remoteChanges.set(id, row.payload && typeof row.payload === "object"
+      ? { kind: "row", row: row as Row }
+      : { kind: "fetch" });
+  }
+  if (applyTimer) clearTimeout(applyTimer);
+  applyTimer = setTimeout(applyRemoteChanges, 400);
+}
+
+async function applyRemoteChanges() {
+  applyTimer = null;
+  const journal = activeJournal;
+  const batch = new Map(remoteChanges);
+  remoteChanges.clear();
+  const toFetch = [...batch].filter(([, c]) => c.kind === "fetch").map(([id]) => id);
+  if (toFetch.length) {
+    try {
+      const { supabase } = await import("./supabase");
+      const { data, error } = await supabase.from("journal_tasks").select("id,payload,updated_at").in("id", toFetch);
+      if (error) throw error;
+      const got = new Map(((data ?? []) as Row[]).map((r) => [r.id, r]));
+      for (const id of toFetch) {
+        const row = got.get(id);
+        batch.set(id, row ? { kind: "row", row } : { kind: "gone" });
+      }
+    } catch {
+      scheduleRefetch();
+      return;
+    }
+  }
+  if (journal !== activeJournal || !snapshot) return;
+  const catIds = new Set(snapshot.categories.map((c) => c.id));
+  const tasks = new Map(snapshot.tasks.map((t) => [t.id, t]));
+  let changed = false;
+  for (const [id, c] of batch) {
+    // שינוי מקומי שממתין גובר — הוא יישלח לענן ויחזור כאירוע
+    if (dirtyRoots.has(id) || deletedRoots.has(id) || leftRoots.has(id)) continue;
+    if (c.kind === "row" && rowVisible(c.row.payload, journal)) {
+      const t = taskFromRow(c.row.payload, journal, catIds);
+      cloudRoots.set(id, t);
+      const cur = tasks.get(id);
+      if (!cur || JSON.stringify(cur) !== JSON.stringify(t)) { tasks.set(id, t); changed = true; }
+    } else {
+      cloudRoots.delete(id);
+      if (tasks.delete(id)) changed = true;
+    }
+  }
+  if (!changed) return;
+  snapshot = { categories: snapshot.categories, tasks: [...tasks.values()].sort(byCreatedDesc) };
+  saveJournal(snapshot);
+  notify();
 }
 
 let refetchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -581,9 +902,10 @@ function scheduleRefetch() {
   refetchTimer = setTimeout(refetchCloud, 600);
 }
 
+// משיכה מלאה של היומן — רק כשצריך: שינוי קטגוריות, או חיבור מחדש אחרי ניתוק
 async function refetchCloud() {
   // שינויים מקומיים בהמתנה — הם יידחפו ואז נקבל אירוע חדש
-  if (dirtyRoots.size || deletedRoots.size || leftRoots.size || catsDirty) return;
+  if (hasPending()) return;
   const journal = activeJournal;
   try {
     const cloud = await fetchCloud(journal);

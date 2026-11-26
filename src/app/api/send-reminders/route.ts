@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireEnv, db, flatten, notifyJournal, escHtml, appUrl, type Task } from "@/lib/server/automation";
+import { requireEnv, db, notifyJournal, escHtml, appUrl } from "@/lib/server/automation";
+import { dueReminders, type IndexedReminder } from "@/lib/server/reminder-index";
 import { tgConfigured } from "@/lib/server/telegram";
 import { smsConfigured, smsText } from "@/lib/server/sms";
-import { participantsOfPayload, journalPath } from "@/lib/journals";
+import { journalPath } from "@/lib/journals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,33 +38,22 @@ export async function POST(req: Request) {
     .from("reminders_sent")
     .upsert({ reminder_id: "__cron_heartbeat__", sent_at: new Date(now).toISOString() }, { onConflict: "reminder_id" });
 
-  // 1. תזכורות שהגיע זמנן, בכל היומנים, כולל שלבים
-  const { data: rows, error: tErr } = await sb.from("journal_tasks").select("payload");
-  if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
-
-  const due: { reminderId: string; journalIds: string[]; task: Task; note: string }[] = [];
-  for (const row of (rows ?? []) as { payload: Task }[]) {
-    if (!row.payload) continue;
-    // משימה משותפת: התזכורת קופצת אצל כל השותפים
-    const journalIds = participantsOfPayload(row.payload);
-    for (const t of flatten([row.payload])) {
-      if (t.status === "done") continue; // משימה שכבר נסגרה לא מנדנדת
-      for (const r of t.reminders ?? []) {
-        const ts = r.datetime ? new Date(r.datetime).getTime() : NaN;
-        if (!isNaN(ts) && ts <= now && ts >= windowStart) {
-          due.push({ reminderId: r.id, journalIds, task: t, note: r.note });
-        }
-      }
-    }
+  // 1. תזכורות שהגיע זמנן, בכל היומנים, כולל שלבים — מתוך האינדקס, בלי להוריד את כל היומנים
+  let due: IndexedReminder[];
+  let scan: string;
+  try {
+    ({ due, scan } = await dueReminders(sb, now, windowStart));
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
-  if (due.length === 0) return NextResponse.json({ sent: 0, due: 0 });
+  if (due.length === 0) return NextResponse.json({ sent: 0, due: 0, scan });
 
   // 2. דילוג על מה שכבר נשלח
   const ids = due.map((d) => d.reminderId);
   const { data: sentRows } = await sb.from("reminders_sent").select("reminder_id").in("reminder_id", ids);
   const alreadySent = new Set((sentRows ?? []).map((r: { reminder_id: string }) => r.reminder_id));
   const toSend = due.filter((d) => !alreadySent.has(d.reminderId));
-  if (toSend.length === 0) return NextResponse.json({ sent: 0, due: due.length });
+  if (toSend.length === 0) return NextResponse.json({ sent: 0, due: due.length, scan });
 
   // 3. מסירה ליומן של כל תזכורת: פוש למכשירים שלו + טלגרם עם כפתורי פעולה
   let pushed = 0;
